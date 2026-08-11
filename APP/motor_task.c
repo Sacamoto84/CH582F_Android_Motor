@@ -42,7 +42,7 @@ static uint8_t  s_sleep_countdown;
 
 /* Кнопка */
 static ubutton_t s_btn;
-static uint8_t   s_reboot_armed;      /* перезагрузиться, как отпустят кнопку */
+static uint8_t   s_reboot_armed;      /* сбросить чип, как доиграет сигнал */
 
 /*********************************************************************
  * @fn      adc_read
@@ -173,6 +173,10 @@ static uint16_t boost_permille(void)
  */
 static void vdrop_monitor(uint8_t on)
 {
+#if(DEBUG_FRIENDLY)
+    (void)on;
+    PowerMonitor(DISABLE, HALevel_1V9);     /* мешает отладчику — выключен */
+#else
     if(on && g_set.vdrop_level && (g_set.vdrop_level <= 4))
     {
         /* уровни 1..4 → HALevel_1V9(0), _2V1(1), _2V3(2), _2V5(3) */
@@ -182,6 +186,7 @@ static void vdrop_monitor(uint8_t on)
     {
         PowerMonitor(DISABLE, HALevel_1V9);
     }
+#endif
 }
 
 /*********************************************************************
@@ -325,8 +330,10 @@ void Motor_Init(void)
      * Счёт Fsys/131072 = 2.18 мс на такт, переполнение 8 бит → 559 мс.
      * Кормим в тике задачи каждые 10 мс, запаса вагон: даже запись
      * настроек во flash (до 34 мс) укладывается. */
+#if(DEBUG_FRIENDLY == 0)
     WWDG_SetCounter(0);
     WWDG_ResetCfg(ENABLE);
+#endif
 
     s_state = M_IDLE;
     s_idle_ms = 0;
@@ -421,8 +428,10 @@ static void run_state_machine(void)
  *
  *          нажатие       — щелчок + ПЕРЕКЛЮЧИТЬ помпу (сразу, не по
  *                          отпусканию)
- *          удержание 2 с — мелодия shutdown + ПЕРЕЗАГРУЗКА
- *          5 кликов      — то же самое
+ *          удержание 2 с — мелодия shutdown, затем сброс чипа:
+ *                            отпустил после сигнала → обычный старт
+ *                            держишь дальше         → ISP-загрузчик
+ *          5 кликов      — сброс (кнопка уже отпущена, значит обычный старт)
  *
  *          «Лестница» импульсов удержания из оригинала выброшена вместе
  *          с четырьмя экранами настройки: SET_POWER, SET_BOOST_ENABLE,
@@ -468,7 +477,9 @@ uint16_t Motor_ProcessEvent(uint8_t task_id, uint16_t events)
     {
         tmos_start_task(Motor_TaskID, MOTOR_EVT_TICK, MS1_TO_SYSTEM_TIME(MOTOR_TICK_MS));
 
+#if(DEBUG_FRIENDLY == 0)
         WWDG_SetCounter(0);         /* покормить сторожевой таймер */
+#endif
 
         /* Счётчик окна для отладчика. Растёт только до порога — так он
          * не переполнится за годы работы. */
@@ -494,11 +505,19 @@ uint16_t Motor_ProcessEvent(uint8_t task_id, uint16_t events)
             s_idle_ms += MOTOR_TICK_MS;
         }
 
-        /* Перезагрузка. Ждём двух условий сразу:
-         *  - кнопка отпущена. PB22 это пин ISP-загрузчика: сбросить чип
-         *    с зажатой кнопкой значит уйти в загрузчик вместо программы;
-         *  - мелодия доиграла, иначе сигнал оборвётся на середине. */
-        if(s_reboot_armed && !KEY_PRESSED() && !Buzzer_IsBusy())
+        /* Сброс. Ждём только окончания сигнала — состояние кнопки
+         * НАМЕРЕННО не проверяется, и это ключевой момент.
+         *
+         * PB22 одновременно пользовательская кнопка и пин ISP-загрузчика,
+         * который читается в момент сброса. Отсюда два исхода одного жеста:
+         *
+         *   держать до сигнала и ОТПУСТИТЬ  → PB22 высокий → обычный старт
+         *   держать до сигнала и НЕ ОТПУСКАТЬ → PB22 низкий → ISP-загрузчик
+         *
+         * Без этого в ISP на батарейном питании попасть нечем: кнопка RST
+         * на плате по умолчанию мертва, опция CFG_RESET_EN сброшена
+         * с завода (даташит, табл. 2-3), а питание не передёрнуть. */
+        if(s_reboot_armed && !Buzzer_IsBusy())
         {
             MotorPwm_Disable();
             PRINT("reboot\n");
@@ -515,6 +534,7 @@ uint16_t Motor_ProcessEvent(uint8_t task_id, uint16_t events)
          * несколько тиков доработать свои RTC-события, только потом
          * вызываем Board_Sleep. Уснуть сразу после StopAdvertising
          * нельзя — стек тут же разбудит чип по своему таймеру. */
+#if(DEBUG_FRIENDLY == 0)
         if(s_sleep_countdown)
         {
             if(--s_sleep_countdown == 0) Board_Sleep();
@@ -529,6 +549,7 @@ uint16_t Motor_ProcessEvent(uint8_t task_id, uint16_t events)
             Peripheral_StopAdvertising();
             s_sleep_countdown = 20;      /* 200 мс */
         }
+#endif
 
         return (events ^ MOTOR_EVT_TICK);
     }

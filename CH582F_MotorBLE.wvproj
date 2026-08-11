@@ -368,7 +368,7 @@
 		"debug_interface_mode": "",
 		"erase": true,
 		"program": true,
-		"verify": true,
+		"verify": false,
 		"reset": true,
 		"sdiPrintf": false,
 		"disablepowerout": false,
