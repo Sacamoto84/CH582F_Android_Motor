@@ -522,6 +522,28 @@ uint16_t Motor_ProcessEvent(uint8_t task_id, uint16_t events)
             MotorPwm_Disable();
             PRINT("reboot\n");
             while((R8_UART1_LSR & RB_LSR_TX_ALL_EMP) == 0);
+
+            /* Сброс сторожевым таймером, а не RB_SOFTWARE_RESET.
+             *
+             * Программный сброс в ISP-загрузчик не приводит НИКОГДА:
+             * RB_BOOT_LOADER в R8_GLOB_CFG_INFO документирован как
+             * «0 = application status (by software reset)». Пин BOOT при
+             * программном сбросе не читается вообще — его опрашивает
+             * загрузочный ПЗУ, а тот отрабатывает при RPOR и MR.
+             *
+             * WTR это отдельный тип сброса, и комментарий его не исключает.
+             * Шанс, что ПЗУ отработает его как обычный старт с опросом
+             * PB22, есть. НЕ ДОКУМЕНТИРОВАНО, проверять на железе.
+             *
+             * Надёжный путь в ISP другой: включить вывод сброса
+             * (CFG_RESET_EN, с завода 0) утилитой WCH-LinkUtility, после
+             * чего работает штатное «зажать BOOT, нажать RST». */
+            WWDG_SetCounter(0xF0);          /* ~35 мс до переполнения */
+            WWDG_ResetCfg(ENABLE);
+
+            /* Подстраховка: если WTR не сработал — обычный сброс, чтобы
+             * не зависнуть здесь навсегда. */
+            mDelaymS(200);
             sys_safe_access_enable();
             R8_RST_WDOG_CTRL |= RB_SOFTWARE_RESET;
             sys_safe_access_disable();
