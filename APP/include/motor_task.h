@@ -32,10 +32,11 @@ extern uint8_t Motor_TaskID;
 void     Motor_Init(void);
 uint16_t Motor_ProcessEvent(uint8_t task_id, uint16_t events);
 
-/* Команды — неблокирующие, исполняются на ближайшем тике */
-void   Motor_Start(void);
-void   Motor_Stop(void);
-void   Motor_Toggle(void);
+/* Команды — неблокирующие, исполняются на ближайшем тике.
+ * Motor_Start возвращает 0, если пуск отклонён отсечкой по разряду. */
+uint8_t Motor_Start(void);
+void    Motor_Stop(void);
+void    Motor_Toggle(void);
 
 uint8_t       Motor_IsStopped(void);
 motor_state_t Motor_GetState(void);

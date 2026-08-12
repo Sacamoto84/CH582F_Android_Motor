@@ -252,8 +252,10 @@ static void handle_packet(const uint8_t *p, uint16_t len)
 
             switch(cmd)
             {
-                case CMD_MOTOR_STOP:     Motor_Stop();  break;
-                case CMD_MOTOR_START:    Motor_Start(); break;
+                case CMD_MOTOR_STOP:     Motor_Stop(); break;
+                /* Отказ по разряду приезжает квитанцией status = 1,
+                 * причина — STOPREASON_LOWBAT в телеметрии. */
+                case CMD_MOTOR_START:    st = Motor_Start() ? 0 : 1; break;
                 /* Стирание страницы блокирует ядро на единицы десятков мс:
                  * выход ШИМ застынет, connection event пропадут. На ходу
                  * отказываем — приложение попросит остановить помпу. */

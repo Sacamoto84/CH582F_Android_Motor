@@ -37,6 +37,7 @@ typedef enum
     PID_VDROP_LEVEL,     /* сброс по просадке VDD33: 0 выкл, 1=1.9 2=2.1       */
                          /* 3=2.3 4=2.5 В                                      */
     PID_SLEEP_TOUT_S,    /* с бездействия до ухода в сон; 0 = не спать        */
+    PID_VBAT_MIN_MV,     /* мВ, ниже порога пуск запрещён; 0 = защиты нет     */
     PID__COUNT
 } param_id_t;
 
@@ -58,6 +59,7 @@ typedef enum
 #define STOPREASON_NONE     0
 #define STOPREASON_USER     1
 #define STOPREASON_TIMEOUT  2   /* сработал max_run_s */
+#define STOPREASON_LOWBAT   3   /* пуск не состоялся: банка ниже vbat_min_mv */
 
 /* Телеметрия, 10 байт, little-endian */
 typedef struct __attribute__((packed))

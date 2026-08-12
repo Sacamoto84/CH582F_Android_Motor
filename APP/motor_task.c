@@ -233,9 +233,40 @@ static void motor_off(uint8_t reason)
 /*********************************************************************
  * Публичные команды
  */
-void Motor_Start(void)  { s_cmd_start = 1; s_cmd_stop = 0; Motor_KickIdle(); }
+/*********************************************************************
+ * @fn      Motor_Start
+ *
+ * @brief   Пуск с отсечкой по разряду.
+ *
+ *          Сравниваем с последним замером vbat: он сделан при стоящей
+ *          помпе, то есть без нагрузки. Уже запущенный мотор порогом НЕ
+ *          глушим — под 0.7 А банка проседает на десятые доли вольта,
+ *          и помпа вырубалась бы через секунду после каждого пуска.
+ *
+ *          Отказ слышен: buzzer_error() и причина STOPREASON_LOWBAT
+ *          в телеметрии, чтобы приложение могло объяснить пользователю.
+ *
+ * @return  1 — пуск принят, 0 — отказано по низкому напряжению
+ */
+uint8_t Motor_Start(void)
+{
+    /* Простой сбрасываем в любом случае: пользователь только что нажал */
+    Motor_KickIdle();
+
+    if(g_set.vbat_min_mv && (s_vbat_mv < g_set.vbat_min_mv))
+    {
+        s_stop_reason = STOPREASON_LOWBAT;
+        buzzer_error();
+        return 0;
+    }
+
+    s_cmd_start = 1;
+    s_cmd_stop  = 0;
+    return 1;
+}
+
 void Motor_Stop(void)   { s_cmd_stop  = 1; s_cmd_start = 0; Motor_KickIdle(); }
-void Motor_Toggle(void) { if(s_state == M_IDLE) Motor_Start(); else Motor_Stop(); }
+void Motor_Toggle(void) { if(s_state == M_IDLE) (void)Motor_Start(); else Motor_Stop(); }
 
 uint8_t       Motor_IsStopped(void) { return (s_state == M_IDLE); }
 motor_state_t Motor_GetState(void)  { return s_state; }
