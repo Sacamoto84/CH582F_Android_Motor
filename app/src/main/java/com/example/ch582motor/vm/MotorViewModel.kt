@@ -15,6 +15,7 @@ import com.example.ch582motor.ble.MotorScanner
 import com.example.ch582motor.ble.ParamValue
 import com.example.ch582motor.ble.Params
 import com.example.ch582motor.ble.Telemetry
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -72,6 +73,7 @@ class MotorViewModel(app: Application) : AndroidViewModel(app) {
     private val expectations = ArrayDeque<Expect>()
     private val debounce = mutableMapOf<Int, Job>()
     private var scanJob: Job? = null
+    private var connectJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -110,10 +112,15 @@ class MotorViewModel(app: Application) : AndroidViewModel(app) {
             debounce.values.forEach { it.cancel() }
             debounce.clear()
             when {
+                phase.cancelled -> notify("Подключение отменено")
+
                 phase.expected ->
                     notify("Устройство ушло в сон — связь разорвана, это нормально")
 
-                phase.failedToConnect -> notify("Не удалось подключиться")
+                phase.failedToConnect ->
+                    notify("Не удалось подключиться. Устройство могло уснуть — " +
+                        "нажмите кнопку на корпусе и повторите")
+
                 phase.reason != 0 -> notify("Связь потеряна")
             }
         }
@@ -157,7 +164,7 @@ class MotorViewModel(app: Application) : AndroidViewModel(app) {
                 busy = true,
             )
         }
-        viewModelScope.launch {
+        connectJob = viewModelScope.launch {
             try {
                 manager.connectTo(found.device)
                 // Сначала параметры, потом телеметрия: пока она молчит, у стека
@@ -167,11 +174,30 @@ class MotorViewModel(app: Application) : AndroidViewModel(app) {
                 // чем вернётся управление из записи.
                 expectations.addLast(Expect.Command(Cmd.TELEMETRY_ON))
                 manager.sendCommand(Cmd.TELEMETRY_ON)
+            } catch (e: CancellationException) {
+                // Отмена — не ошибка, сообщение выдаст cancelConnect()
+                throw e
             } catch (e: Exception) {
                 notify(e.message ?: "Не удалось подключиться")
             } finally {
                 _state.update { it.copy(busy = false) }
             }
+        }
+    }
+
+    /**
+     * Прервать подключение. Устройство спит и пропало из эфира — ждать
+     * до конца ретраев (до минуты) незачем.
+     */
+    fun cancelConnect() {
+        val job = connectJob ?: return
+        connectJob = null
+        // Соединение уже состоялось — рвать его отменой нельзя
+        if (!job.isActive) return
+        job.cancel()
+        viewModelScope.launch {
+            manager.abortConnect()
+            _state.update { it.copy(busy = false) }
         }
     }
 
@@ -235,10 +261,12 @@ class MotorViewModel(app: Application) : AndroidViewModel(app) {
                     // Прошивка отказывает в записи на ходу: стирание страницы
                     // заморозило бы выход ШИМ на десятки миллисекунд.
                     notify(
-                        if (expect.code == Cmd.SAVE) {
-                            "Сохранение отклонено: сначала остановите помпу"
-                        } else {
-                            "${Cmd.name(expect.code)}: команда отвергнута"
+                        when (expect.code) {
+                            Cmd.SAVE -> "Сохранение отклонено: сначала остановите помпу"
+                            Cmd.MOTOR_START ->
+                                "Пуск заблокирован: напряжение банки ниже порога отсечки"
+
+                            else -> "${Cmd.name(expect.code)}: команда отвергнута"
                         },
                     )
                     return

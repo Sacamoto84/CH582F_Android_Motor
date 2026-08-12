@@ -70,7 +70,7 @@ fun AppRoot(vm: MotorViewModel = viewModel()) {
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            StatusLine(state.phase)
+            StatusLine(state.phase, state.busy, vm::cancelConnect)
 
             if (!state.connected) {
                 if (state.deviceAddress != null && !state.phase.isBusy) {
@@ -199,21 +199,33 @@ private fun UnsavedBanner(onSave: () -> Unit) {
     }
 }
 
+/**
+ * Полоса состояния подключения с отменой. Устройство засыпает и пропадает
+ * из эфира — попытка соединиться со спящим уходит в ретраи почти на минуту,
+ * и ждать её до конца бессмысленно.
+ */
 @Composable
-private fun StatusLine(phase: ConnectionPhase) {
-    val text = when (phase) {
-        is ConnectionPhase.Connecting -> "Подключение…"
-        is ConnectionPhase.Initializing -> "Настройка соединения…"
-        is ConnectionPhase.Disconnecting -> "Отключение…"
-        is ConnectionPhase.Ready -> null
-        is ConnectionPhase.Disconnected -> null
+private fun StatusLine(phase: ConnectionPhase, busy: Boolean, onCancel: () -> Unit) {
+    val text = when {
+        phase is ConnectionPhase.Ready -> null
+        phase is ConnectionPhase.Connecting -> "Подключение…"
+        phase is ConnectionPhase.Initializing -> "Настройка соединения…"
+        phase is ConnectionPhase.Disconnecting -> "Отключение…"
+        // Между нажатием и первым колбэком стека фазы ещё нет
+        busy -> "Подключение…"
+        else -> null
+    } ?: return
+
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(start = 16.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text, style = MaterialTheme.typography.labelMedium)
+        // Отключение отменять нечего — оно и так завершится
+        if (phase !is ConnectionPhase.Disconnecting) {
+            TextButton(onClick = onCancel) { Text("Отмена") }
+        }
     }
-    if (text != null) {
-        Text(
-            text,
-            style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-        )
-        LinearProgressIndicator(Modifier.fillMaxWidth())
-    }
+    LinearProgressIndicator(Modifier.fillMaxWidth())
 }

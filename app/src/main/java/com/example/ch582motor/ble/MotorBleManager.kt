@@ -38,6 +38,10 @@ class MotorBleManager(context: Context) : BleManager(context) {
     @Volatile
     var sleepRequested = false
 
+    /** Пользователь нажал «Отмена» — неудача соединения не ошибка, а его решение. */
+    @Volatile
+    private var cancelRequested = false
+
     init {
         setConnectionObserver(object : ConnectionObserver {
             override fun onDeviceConnecting(device: BluetoothDevice) {
@@ -49,7 +53,13 @@ class MotorBleManager(context: Context) : BleManager(context) {
             }
 
             override fun onDeviceFailedToConnect(device: BluetoothDevice, reason: Int) {
-                _connection.value = ConnectionPhase.Disconnected(reason, failedToConnect = true)
+                val cancelled = cancelRequested
+                cancelRequested = false
+                _connection.value = ConnectionPhase.Disconnected(
+                    reason,
+                    failedToConnect = true,
+                    cancelled = cancelled,
+                )
             }
 
             override fun onDeviceReady(device: BluetoothDevice) {
@@ -62,8 +72,14 @@ class MotorBleManager(context: Context) : BleManager(context) {
 
             override fun onDeviceDisconnected(device: BluetoothDevice, reason: Int) {
                 val expected = sleepRequested
+                val cancelled = cancelRequested
                 sleepRequested = false
-                _connection.value = ConnectionPhase.Disconnected(reason, expected = expected)
+                cancelRequested = false
+                _connection.value = ConnectionPhase.Disconnected(
+                    reason,
+                    expected = expected,
+                    cancelled = cancelled,
+                )
             }
         })
     }
@@ -117,6 +133,17 @@ class MotorBleManager(context: Context) : BleManager(context) {
         disconnect().suspend()
     }
 
+    /**
+     * Прервать попытку соединения. Отмена корутины сама по себе не роняет
+     * начатую операцию GATT — надо явно закрыть её через disconnect(),
+     * иначе стек продолжит перебирать попытки в фоне.
+     */
+    suspend fun abortConnect() {
+        cancelRequested = true
+        runCatching { cancelQueue() }
+        runCatching { disconnect().suspend() }
+    }
+
     /** Любая запись в CMD — ровно 3 байта. */
     private suspend fun write(packet: ByteArray) {
         val target = cmdChar ?: error("характеристика CMD недоступна")
@@ -150,11 +177,13 @@ sealed interface ConnectionPhase {
     /**
      * @param expected разрыв после команды SLEEP — так и задумано
      * @param failedToConnect до соединения дело не дошло
+     * @param cancelled пользователь сам прервал подключение
      */
     data class Disconnected(
         val reason: Int = ConnectionObserver.REASON_SUCCESS,
         val expected: Boolean = false,
         val failedToConnect: Boolean = false,
+        val cancelled: Boolean = false,
     ) : ConnectionPhase
 
     val isReady: Boolean get() = this is Ready
