@@ -1,0 +1,16 @@
+# В репозитории держим LF, в рабочей копии — как настроено локально.
+* text=auto eol=lf
+
+# Бинарники: любая конверсия переводов строк их портит.
+# .wvproj — обфусцированный блоб конфигурации загрузчика WCH-Link,
+# git по умолчанию принимает его за текст и ломает.
+*.wvproj  binary
+*.a       binary
+*.hex     binary
+*.bin     binary
+*.elf     binary
+
+# Конфиги проекта MounRiver — обычный XML
+*.cproject text
+*.project  text
+*.launch   text

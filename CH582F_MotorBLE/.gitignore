@@ -1,0 +1,16 @@
+# Сборка MounRiver — всё живёт в obj/, включая .elf/.hex/.map/.lst
+/obj/
+
+# Объектники и зависимости, если соберётся мимо obj/
+*.o
+*.d
+
+# Служебное MRS / Eclipse
+.mrs/
+.metadata/
+
+# ЧТО НАМЕРЕННО НЕ ИГНОРИРУЕТСЯ:
+#   CH582F_MotorBLE.wvproj  — конфигурация загрузчика WCH-Link
+#   LIB/*.hex               — образы ROM-библиотеки стека BLE от WCH
+#   LIB/*.a, StdPeriphDriver/*.a — бинарные библиотеки, без них не собрать
+#   .cproject .project .settings/ — настройки сборки, проект без них не откроется
