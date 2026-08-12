@@ -26,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -149,6 +150,7 @@ private fun NumberEditor(
     onCommit: (Int) -> Unit,
 ) {
     var text by remember(value) { mutableStateOf(value?.toString() ?: "") }
+    val focusManager = LocalFocusManager.current
 
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
@@ -171,7 +173,11 @@ private fun NumberEditor(
                 imeAction = ImeAction.Done,
             ),
             keyboardActions = KeyboardActions(
-                onDone = { text.toIntOrNull()?.let { onCommit(spec.clamp(it)) } },
+                onDone = {
+                    text.toIntOrNull()?.let { onCommit(spec.clamp(it)) }
+                    // Убрать клавиатуру: значение записано, держать её незачем
+                    focusManager.clearFocus()
+                },
             ),
             modifier = Modifier.padding(start = 8.dp).width(104.dp),
         )

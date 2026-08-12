@@ -51,7 +51,11 @@ fun SettingsScreen(
     var frozenMv by remember { mutableIntStateOf(0) }
 
     LazyColumn(
-        modifier = modifier.fillMaxSize().padding(horizontal = 16.dp),
+        // imePadding обязателен: enableEdgeToEdge() снимает decorFitsSystemWindows,
+        // окно под клавиатуру больше не ужимается, и adjustResize из манифеста
+        // ничего не делает. Без него список не знает, что низ экрана занят,
+        // и не может подтянуть редактируемое поле в видимую часть.
+        modifier = modifier.fillMaxSize().imePadding().padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         item {
