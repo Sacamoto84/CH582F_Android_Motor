@@ -1,0 +1,19 @@
+# В репозитории держим LF, в рабочей копии — как настроено локально.
+* text=auto eol=lf
+
+# Скрипты Windows: cmd.exe требует CRLF, с LF gradlew.bat не запустится.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Обёртка Gradle под POSIX: sh спотыкается о \r в конце строки.
+gradlew text eol=lf
+
+# Бинарники: любая конверсия переводов строк их портит.
+*.jar      binary
+*.aar      binary
+*.webp     binary
+*.png      binary
+*.jpg      binary
+*.ttf      binary
+*.keystore binary
+*.jks      binary
