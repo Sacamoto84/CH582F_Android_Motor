@@ -53,6 +53,14 @@ static void Board_Init(void)
     /* Пищалка: до Settings_Load(), потому что при чистом DataFlash тот
      * сразу пишет дефолты и играет сигнал сохранения. */
     Buzzer_Init();
+
+    /* Свободные ножки — под опору, см. комментарий к UNUSED_PINS_* в board.h.
+     * Настройка живёт и во сне: домен ввода-вывода в Shutdown остаётся под
+     * питанием, ножки держат последнее состояние — ровно поэтому Board_Sleep
+     * гасит их вручную. */
+    GPIOA_ModeCfg(UNUSED_PINS_A_PD, GPIO_ModeIN_PD);
+    GPIOB_ModeCfg(UNUSED_PINS_B_PD, GPIO_ModeIN_PD);
+    GPIOB_ModeCfg(UNUSED_PINS_B_PU, GPIO_ModeIN_PU);
 }
 
 /*********************************************************************
@@ -176,6 +184,10 @@ int main(void)
     GPIOA_SetBits(PIN_DBG_TX);
     GPIOA_ModeCfg(PIN_DBG_TX, GPIO_ModeOut_PP_5mA);
     UART1_DefInit();
+#else
+    /* Без отладочного вывода PA9 остался бы висящим входом. Подтяжка вверх —
+     * это и уровень покоя UART, если к ножке всё-таки подключатся. */
+    GPIOA_ModeCfg(PIN_DBG_TX, GPIO_ModeIN_PU);
 #endif
 
     PRINT("\n%s\n", VER_LIB);

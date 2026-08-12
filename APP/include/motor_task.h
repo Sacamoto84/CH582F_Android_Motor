@@ -18,7 +18,7 @@
 
 #define MOTOR_TICK_MS           10
 #define MOTOR_TELEMETRY_MS      200
-#define VBAT_PERIOD_MS          1000    /* как часто мерить аккумулятор */
+#define VBAT_PERIOD_MS          2000    /* как часто мерить аккумулятор */
 
 typedef enum
 {
@@ -47,7 +47,7 @@ void   Motor_GetTelemetry(telemetry_t *t);
 uint32_t Motor_IdleMs(void);
 void     Motor_KickIdle(void);
 
-/* Уснуть по явной команде, не дожидаясь boot_grace_s */
+/* Уснуть по явной команде, не дожидаясь таймаута простоя */
 void     Motor_ForceSleep(void);
 
 #endif /* __MOTOR_TASK_H */

@@ -27,4 +27,8 @@ void      MotorService_SetConnHandle(uint16_t handle);
 /* Отправить пакет в notify. Возвращает SUCCESS, если ушло. */
 bStatus_t MotorService_Notify(uint8_t *pData, uint16_t len);
 
+/* Выгрузка параметров по OP_DUMP_ALL, по одному за вызов.
+ * Дёргать из тика задачи мотора. */
+void      MotorService_DumpTick(void);
+
 #endif /* __MOTOR_SERVICE_H */

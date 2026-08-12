@@ -34,8 +34,7 @@ static uint16_t s_vbat_mv;
 static uint32_t s_state_ms;           /* время в текущем состоянии   */
 static uint32_t s_run_ms;             /* время непрерывной работы    */
 static uint32_t s_idle_ms;
-static uint32_t s_boot_ms;            /* сколько прошло с момента сброса */
-static uint8_t  s_force_sleep;        /* команда «уснуть» игнорирует окно */
+static uint8_t  s_force_sleep;        /* команда «уснуть» по BLE */
 static uint16_t s_vbat_div;           /* делитель периода замера VBAT */
 static uint8_t  s_vbat_arm;           /* питание подано, читаем на след. тике */
 static uint8_t  s_sleep_countdown;
@@ -43,6 +42,44 @@ static uint8_t  s_sleep_countdown;
 /* Кнопка */
 static ubutton_t s_btn;
 static uint8_t   s_reboot_armed;      /* сбросить чип, как доиграет сигнал */
+
+/*********************************************************************
+ * @fn      reboot_as_power_on
+ *
+ * @brief   Сброс, который ПЗУ-загрузчик видит как подачу питания (RPOR),
+ *          а не как программный (SR). Только при RPOR и MR загрузчик
+ *          опрашивает пин BOOT — отсюда и вход в ISP удержанием кнопки.
+ *
+ *          Ключ — запись 0xFFFF в R16_INT32K_TUNE перед RB_SOFTWARE_RESET.
+ *          Приём не самодельный: ровно этой последовательностью WCH в своём
+ *          же SDK делает UserOptionByte_Active() в CH58x_flash.c и
+ *          HardFault_Handler() в CH58x_sys.c, а комментарий к последнему
+ *          говорит прямым текстом «复位类型为上电复位» — тип сброса
+ *          power-on. Комментарий к RB_BOOT_LOADER про «application status
+ *          (by software reset)» описывает голый RB_SOFTWARE_RESET и этот
+ *          случай не покрывает.
+ *
+ *          Проверяется без всякого ISP: main.c печатает причину сброса.
+ *          Было «SW», должно стать «POR».
+ *
+ *          __HIGH_CODE обязательно: FLASH_ROM_SW_RESET() сбрасывает
+ *          контроллер флеша, выполняться из флеша в этот момент нельзя.
+ */
+__HIGH_CODE
+static void reboot_as_power_on(void)
+{
+    FLASH_ROM_SW_RESET();
+
+    sys_safe_access_enable();
+    R16_INT32K_TUNE = 0xFFFF;
+    sys_safe_access_disable();
+
+    sys_safe_access_enable();
+    R8_RST_WDOG_CTRL |= RB_SOFTWARE_RESET;
+    sys_safe_access_disable();
+
+    while(1);
+}
 
 /*********************************************************************
  * @fn      adc_read
@@ -68,24 +105,6 @@ static void read_pot(void)
 {
     uint16_t raw = adc_read(AIN_POT);
     s_pot_raw = (uint16_t)(((uint32_t)s_pot_raw * 3 + raw) >> 2);
-}
-
-/*********************************************************************
- * @fn      boot_grace_passed
- *
- * @brief   Первые boot_grace_s секунд после сброса сон запрещён.
- *
- *          В Shutdown ядро обесточено, отладчик к чипу не цепляется.
- *          Без этого окна прошивку с коротким sleep_tout_s пришлось бы
- *          перезаливать только через ISP-загрузчик (кнопка BOOT при сбросе).
- *          В отличие от BOOT_DELAY_MS ничего не блокирует: BLE рекламируется,
- *          помпа работает, просто устройство не уходит спать.
- */
-static uint8_t boot_grace_passed(void)
-{
-    if(s_force_sleep)           return 1;   /* явная команда сильнее окна */
-    if(g_set.boot_grace_s == 0) return 1;
-    return (s_boot_ms >= (uint32_t)g_set.boot_grace_s * 1000U);
 }
 
 /*********************************************************************
@@ -240,7 +259,6 @@ uint8_t App_SleepAllowed(void)
 {
     if(s_state != M_IDLE)     return 0; /* ШИМ замер бы вместе с Fsys  */
     if(Buzzer_IsBusy())       return 0; /* тон порвался бы             */
-    if(!boot_grace_passed())  return 0; /* окно, чтобы успел отладчик  */
     return 1;
 }
 
@@ -273,8 +291,8 @@ void Motor_KickIdle(void)
 /*********************************************************************
  * @fn      Motor_ForceSleep
  *
- * @brief   Явная команда «уснуть» по BLE. Останавливает помпу и снимает
- *          запрет на сон, наложенный boot_grace_s. Само засыпание
+ * @brief   Явная команда «уснуть» по BLE. Останавливает помпу и взводит
+ *          флаг, который усыпляет даже при sleep_tout_s = 0. Само засыпание
  *          произойдёт на ближайших тиках через штатную двухшаговую
  *          процедуру — уснуть прямо из колбэка стека нельзя.
  */
@@ -481,10 +499,6 @@ uint16_t Motor_ProcessEvent(uint8_t task_id, uint16_t events)
         WWDG_SetCounter(0);         /* покормить сторожевой таймер */
 #endif
 
-        /* Счётчик окна для отладчика. Растёт только до порога — так он
-         * не переполнится за годы работы. */
-        if(s_boot_ms < 0xFFFF0000U) s_boot_ms += MOTOR_TICK_MS;
-
         read_pot();
         vbat_tick();
 
@@ -523,34 +537,15 @@ uint16_t Motor_ProcessEvent(uint8_t task_id, uint16_t events)
             PRINT("reboot\n");
             while((R8_UART1_LSR & RB_LSR_TX_ALL_EMP) == 0);
 
-            /* Сброс сторожевым таймером, а не RB_SOFTWARE_RESET.
-             *
-             * Программный сброс в ISP-загрузчик не приводит НИКОГДА:
-             * RB_BOOT_LOADER в R8_GLOB_CFG_INFO документирован как
-             * «0 = application status (by software reset)». Пин BOOT при
-             * программном сбросе не читается вообще — его опрашивает
-             * загрузочный ПЗУ, а тот отрабатывает при RPOR и MR.
-             *
-             * WTR это отдельный тип сброса, и комментарий его не исключает.
-             * Шанс, что ПЗУ отработает его как обычный старт с опросом
-             * PB22, есть. НЕ ДОКУМЕНТИРОВАНО, проверять на железе.
-             *
-             * Надёжный путь в ISP другой: включить вывод сброса
-             * (CFG_RESET_EN, с завода 0) утилитой WCH-LinkUtility, после
-             * чего работает штатное «зажать BOOT, нажать RST». */
-            WWDG_SetCounter(0xF0);          /* ~35 мс до переполнения */
-            WWDG_ResetCfg(ENABLE);
-
-            /* Подстраховка: если WTR не сработал — обычный сброс, чтобы
-             * не зависнуть здесь навсегда. */
-            mDelaymS(200);
-            sys_safe_access_enable();
-            R8_RST_WDOG_CTRL |= RB_SOFTWARE_RESET;
-            sys_safe_access_disable();
-            while(1);
+            /* Сброс типа «подача питания» (RPOR), не программный (SR)
+             * и не сторожевым таймером. Прежний вариант с WTR был
+             * догадкой и выброшен: этот приём взят из самого SDK WCH.
+             * Механизм и ссылки — в комментарии к reboot_as_power_on(). */
+            reboot_as_power_on();
         }
 
         Settings_Tick();
+        MotorService_DumpTick();
 
         /* Глубокий сон в два шага: сначала гасим рекламу и даём стеку
          * несколько тиков доработать свои RTC-события, только потом
@@ -563,7 +558,6 @@ uint16_t Motor_ProcessEvent(uint8_t task_id, uint16_t events)
         }
         else if((s_state == M_IDLE) &&
                 !Peripheral_IsConnected() &&
-                boot_grace_passed() &&
                 (s_force_sleep ||
                  (g_set.sleep_tout_s &&
                   (s_idle_ms >= (uint32_t)g_set.sleep_tout_s * 1000U))))

@@ -69,9 +69,8 @@ void Settings_Defaults(void)
     g_set.vbat_scale_q12 = VBAT_SCALE_Q12_DEFAULT;
     g_set.vdrop_level    = 4;        /* 2.5 В — выше максимума LVR (2.3) */
     /* Отсчёт идёт только когда помпа СТОИТ и никто не подключён по BLE.
-     * Во время работы насоса чип не спит вообще — это и окно для отладчика. */
+     * Во время работы насоса чип не спит вообще. */
     g_set.sleep_tout_s   = 60;
-    g_set.boot_grace_s   = 30;       /* успеть зацепиться отладчиком после сброса */
 }
 
 /*********************************************************************
@@ -114,8 +113,9 @@ void Settings_Load(void)
  *          одного-двух connection event не рвёт линк.
  *
  *          Ресурс ячейки 100 000 циклов при 5..45 °C (табл. 20-9), поэтому
- *          записи копятся флагом s_save_pending, а не идут на каждое
- *          изменение параметра. Чередование слотов делит износ пополам.
+ *          изменение параметра сюда не приводит: оно применяется в ОЗУ, а
+ *          запись идёт только по команде CMD_SAVE. Чередование слотов делит
+ *          износ пополам.
  */
 uint8_t Settings_SaveNow(void)
 {
@@ -178,7 +178,6 @@ uint16_t Settings_Get(uint8_t id)
         case PID_VBAT_SCALE_Q12: return g_set.vbat_scale_q12;
         case PID_VDROP_LEVEL:    return g_set.vdrop_level;
         case PID_SLEEP_TOUT_S:   return g_set.sleep_tout_s;
-        case PID_BOOT_GRACE_S:   return g_set.boot_grace_s;
         default:                 return 0;
     }
 }
@@ -202,7 +201,6 @@ uint8_t Settings_Set(uint8_t id, uint16_t v)
         case PID_VBAT_SCALE_Q12: if(v == 0) return 0; g_set.vbat_scale_q12 = v; break;
         case PID_VDROP_LEVEL:    if(v > 4) return 0; g_set.vdrop_level = v; break;
         case PID_SLEEP_TOUT_S:   g_set.sleep_tout_s = v; break;
-        case PID_BOOT_GRACE_S:   g_set.boot_grace_s = v; break;
         default:                 return 0;
     }
 
@@ -214,6 +212,8 @@ uint8_t Settings_Set(uint8_t id, uint16_t v)
         g_set.pwm_max = t;
     }
 
-    Settings_RequestSave();
+    /* Во flash НЕ пишем: значение уже действует, а запись — отдельное явное
+     * действие пользователя (CMD_SAVE). Иначе каждый шаг ползунка в мастере
+     * подбора стоил бы цикла стирания страницы. */
     return 1;
 }

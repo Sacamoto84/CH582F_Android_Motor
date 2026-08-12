@@ -27,7 +27,7 @@
 #define SETTINGS_SLOT_A     0x1000
 #define SETTINGS_SLOT_B     0x1100
 #define SETTINGS_MAGIC      0x4D50      /* 'PM' — pump */
-#define SETTINGS_VERSION    7           /* v7: + vdrop_level */
+#define SETTINGS_VERSION    8           /* v8: убран boot_grace_s */
 
 typedef struct __attribute__((packed))
 {
@@ -46,7 +46,6 @@ typedef struct __attribute__((packed))
     uint16_t vbat_scale_q12;     /* масштаб АЦП -> мВ, калибруется */
     uint16_t vdrop_level;        /* сброс по просадке VDD33, 0 = выкл */
     uint16_t sleep_tout_s;       /* 0 — не засыпать */
-    uint16_t boot_grace_s;       /* после сброса сон запрещён столько секунд */
 
     uint16_t crc;
 } settings_t;
@@ -56,7 +55,10 @@ extern settings_t g_set;
 void     Settings_Load(void);          /* прочитать или залить дефолты */
 void     Settings_Defaults(void);
 uint8_t  Settings_SaveNow(void);       /* блокирует на единицы мс, мотор должен стоять */
-void     Settings_RequestSave(void);   /* отложенная запись */
+/* Отложенная запись. Изменение параметра её НЕ взводит: параметр применяется
+ * в ОЗУ сразу, а во flash уходит только по команде CMD_SAVE. Флаг остался для
+ * сброса к заводским — там запись подразумевается самой операцией. */
+void     Settings_RequestSave(void);
 void     Settings_Tick(void);          /* дёргать из задачи; сам решит, когда писать */
 
 /* Доступ по id для BLE */

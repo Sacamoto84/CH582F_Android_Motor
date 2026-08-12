@@ -31,6 +31,9 @@ static uint8_t dataUserDesp[] = "Telemetry\0";
 
 static uint16_t s_connHandle = INVALID_CONNHANDLE;
 
+/* Следующий параметр к выгрузке; PID__COUNT — выгрузка не идёт */
+static uint8_t s_dump_next = PID__COUNT;
+
 /* Порядок строк должен совпадать с MOTORPROFILE_DATA_VALUE_POS */
 static gattAttribute_t motorAttrTbl[] = {
     /* 0 — объявление сервиса */
@@ -122,6 +125,7 @@ bStatus_t MotorService_AddService(void)
 void MotorService_SetConnHandle(uint16_t handle)
 {
     s_connHandle = handle;
+    s_dump_next  = PID__COUNT;   /* недоигранная выгрузка в новое соединение не тянется */
 }
 
 /*********************************************************************
@@ -155,6 +159,43 @@ bStatus_t MotorService_Notify(uint8_t *pData, uint16_t len)
         return FAILURE;
     }
     return SUCCESS;
+}
+
+/*********************************************************************
+ * @fn      MotorService_DumpTick
+ *
+ * @brief   Выгрузка по OP_DUMP_ALL: один параметр за вызов.
+ *
+ *          Темп задаёт сам стек. Пока в очереди есть место, пакет уходит
+ *          и счётчик двигается; когда буферы кончились, Notify возвращает
+ *          ошибку и тот же параметр повторяется на следующем тике. Так
+ *          серия сама подстраивается под интервал соединения и не теряет
+ *          хвост, как это делал прежний цикл.
+ *
+ *          Ошибки не про буферы (нет соединения, клиент не включил
+ *          уведомления) выгрузку прекращают — повторять нечего.
+ */
+void MotorService_DumpTick(void)
+{
+    param_ntf_t pn;
+    bStatus_t   st;
+
+    if(s_dump_next >= PID__COUNT) return;
+
+    pn.type  = NTF_PARAM;
+    pn.id    = s_dump_next;
+    pn.value = Settings_Get(s_dump_next);
+
+    st = MotorService_Notify((uint8_t *)&pn, sizeof(pn));
+
+    if(st == SUCCESS)
+    {
+        s_dump_next++;
+    }
+    else if((st != bleMemAllocError) && (st != FAILURE))
+    {
+        s_dump_next = PID__COUNT;
+    }
 }
 
 /*********************************************************************
@@ -196,20 +237,13 @@ static void handle_packet(const uint8_t *p, uint16_t len)
             break;
 
         case OP_DUMP_ALL:
-        {
-            /* Пакеты уходят в очередь стека; при BLE_BUFF_NUM = 5 разумно
-             * не выгружать всё разом, но параметров мало и интервал
-             * соединения их разнесёт. */
-            uint8_t id;
-            for(id = 0; id < PID__COUNT; id++)
-            {
-                pn.type  = NTF_PARAM;
-                pn.id    = id;
-                pn.value = Settings_Get(id);
-                if(MotorService_Notify((uint8_t *)&pn, sizeof(pn)) != SUCCESS) break;
-            }
+            /* Только взводим счётчик. Слать всё циклом нельзя: очередь стека
+             * BLE_BUFF_NUM = 5 пакетов, за одно событие соединения радио
+             * выпускает BLE_TX_NUM_EVENT = 1, а цикл прокручивается за
+             * микросекунды — хвост серии просто терялся.
+             * Выгружает MotorService_DumpTick() из тика задачи мотора. */
+            s_dump_next = 0;
             break;
-        }
 
         case OP_COMMAND:
         {
@@ -220,7 +254,12 @@ static void handle_packet(const uint8_t *p, uint16_t len)
             {
                 case CMD_MOTOR_STOP:     Motor_Stop();  break;
                 case CMD_MOTOR_START:    Motor_Start(); break;
-                case CMD_SAVE:           st = Settings_SaveNow() ? 0 : 1; break;
+                /* Стирание страницы блокирует ядро на единицы десятков мс:
+                 * выход ШИМ застынет, connection event пропадут. На ходу
+                 * отказываем — приложение попросит остановить помпу. */
+                case CMD_SAVE:
+                    st = (Motor_IsStopped() && Settings_SaveNow()) ? 0 : 1;
+                    break;
                 case CMD_FACTORY_RESET:  Settings_Defaults(); Settings_RequestSave(); break;
                 case CMD_TELEMETRY_ON:
                     tmos_start_task(Motor_TaskID, MOTOR_EVT_TELEMETRY, 1);
@@ -232,7 +271,7 @@ static void handle_packet(const uint8_t *p, uint16_t len)
                     /* Уснуть прямо здесь нельзя — мы внутри колбэка стека,
                      * соединение ещё живо. Взводим флаг и роняем линк;
                      * уснёт задача мотора на своём тике. Флаг заодно
-                     * обходит окно boot_grace_s. */
+                     * усыпляет и при sleep_tout_s = 0. */
                     Motor_ForceSleep();
                     GAPRole_TerminateLink(s_connHandle);
                     break;
@@ -284,7 +323,8 @@ static bStatus_t motor_WriteAttrCB(uint16_t connHandle, gattAttribute_t *pAttr,
             tmos_memcpy(pAttr->pValue, pValue, 3);
             /* Обработка идёт прямо здесь: колбэк вызывается из задачи GATT,
              * не из прерывания, и работает единицы микросекунд.
-             * Запись во флеш отложена через Settings_RequestSave(). */
+             * Во флеш здесь никто не пишет: параметр ложится в ОЗУ, а
+             * запись идёт отдельной командой CMD_SAVE. */
             handle_packet(pValue, len);
             break;
 
