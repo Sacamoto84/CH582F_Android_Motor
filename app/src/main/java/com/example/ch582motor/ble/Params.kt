@@ -8,8 +8,9 @@ package com.example.ch582motor.ble
  * предел делителя ШИМ), но значение едет как uint16, поэтому потолок — 65535.
  * Верхний предел железа (~234 кГц) недостижим через протокол.
  *
- * BOOT_GRACE_S (id 11) убран вместе с версией настроек 8: окно держали ради
- * отладчика, а проект заливается через ISP.
+ * BOOT_GRACE_S убран вместе с версией настроек 8: окно держали ради отладчика,
+ * а проект заливается через ISP. Освободившийся id 11 занял VBAT_MIN_MV
+ * из версии 9 — отсечка по разряду.
  */
 enum class ParamKind { NUMBER, SWITCH, ENUM }
 
@@ -33,6 +34,8 @@ data class ParamSpec(
         kind == ParamKind.SWITCH -> if (v != 0) "включён" else "выключен"
         kind == ParamKind.ENUM -> options.getOrElse(v) { v.toString() }
         unit == "‰" -> "%.1f %%".format(v / 10.0)
+        // Мультиметр меряет в вольтах, человеку понятнее «3.00 В», чем «3000»
+        unit == "мВ" -> "%.2f В".format(v / 1000.0)
         else -> "$v $unit"
     }
 }
@@ -50,8 +53,9 @@ object Params {
     const val VBAT_SCALE_Q12 = 8
     const val VDROP_LEVEL = 9
     const val SLEEP_TOUT_S = 10
+    const val VBAT_MIN_MV = 11
 
-    const val COUNT = 11
+    const val COUNT = 12
 
     /** Нижняя граница частоты ШИМ — аппаратное ограничение, меньше чип не умеет. */
     const val PWM_HZ_MIN = 919
@@ -121,6 +125,13 @@ object Params {
             unit = "с", min = 0, max = 600, default = 60, kind = ParamKind.NUMBER,
             hint = "Считается, только когда помпа стоит и никто не подключён. " +
                 "0 — не спать вообще.",
+        ),
+        ParamSpec(
+            id = VBAT_MIN_MV, key = "VBAT_MIN_MV", title = "Отсечка по разряду",
+            unit = "мВ", min = 0, max = 4200, default = 3000, kind = ParamKind.NUMBER,
+            hint = "Ниже этого напряжения помпа не запустится — устройство ответит " +
+                "сигналом ошибки. Сравнение идёт с напряжением покоя, уже " +
+                "работающую помпу порог не глушит. 0 — защита выключена.",
         ),
     )
 

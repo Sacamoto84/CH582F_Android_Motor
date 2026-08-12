@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -22,6 +23,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.example.ch582motor.ble.Params
+import com.example.ch582motor.ble.StopReason
 import com.example.ch582motor.vm.UiState
 
 @Composable
@@ -37,9 +40,13 @@ fun MonitorScreen(
     var confirmSleep by remember { mutableStateOf(false) }
     val telemetry = state.telemetry
 
+    val cutoffMv = state.value(Params.VBAT_MIN_MV) ?: 0
+    val belowCutoff = cutoffMv > 0 && telemetry != null && telemetry.vbatMv < cutoffMv
+
     Column(
         modifier = modifier
             .fillMaxSize()
+            .imePadding()
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -51,6 +58,30 @@ fun MonitorScreen(
                     telemetry?.state?.title ?: "Ждём телеметрию…",
                     style = MaterialTheme.typography.headlineSmall,
                 )
+
+                // Причина отказа живёт в ОЗУ контроллера и стирается сбросом,
+                // в том числе после ухода в сон. Поэтому основной признак
+                // выводим сами из напряжения и порога — он верен всегда,
+                // даже если stop_reason уже потерян.
+                if (belowCutoff) {
+                    Text(
+                        "Банка разряжена: %.2f В при пороге %.2f В. Пуск заблокирован — "
+                            .format(telemetry.vbatMv / 1000.0, cutoffMv / 1000.0) +
+                            "зарядите аккумулятор или понизьте отсечку в настройках.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                } else if (telemetry?.stopReason == StopReason.LOW_BATTERY) {
+                    // Напряжение уже поднялось, но последний пуск отклоняли
+                    Text(
+                        "Последний пуск был заблокирован отсечкой по разряду. " +
+                            "Сейчас напряжение выше порога — можно пробовать снова.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
 
                 GaugeRow(
                     label = "Скважность",

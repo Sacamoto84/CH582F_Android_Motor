@@ -78,6 +78,24 @@ class ProtoTest {
     }
 
     @Test
+    fun `отказ пуска по разряду виден в телеметрии`() {
+        // type=0, state=0 стоит, stop_reason=3, остальное неважно
+        val packet = byteArrayOf(0x00, 0x00, 0x03, 0, 0, 0, 0, 0, 0x9C.toByte(), 0x0A)
+        val t = Proto.parse(packet) as Telemetry
+        assertEquals(MotorState.STOPPED, t.state)
+        assertEquals(StopReason.LOW_BATTERY, t.stopReason)
+        assertEquals(2716, t.vbatMv)
+    }
+
+    @Test
+    fun `порог отсечки показывается вольтами`() {
+        // Разделитель дробной части берётся из локали — для сравнения нормализуем
+        fun fmt(v: Int) = Params.spec(Params.VBAT_MIN_MV)!!.format(v).replace(',', '.')
+        assertEquals("3.00 В", fmt(3000))
+        assertEquals("3.25 В", fmt(3250))
+    }
+
+    @Test
     fun `короткие и неизвестные пакеты не валят разбор`() {
         assertNull(Proto.parse(byteArrayOf()))
         assertNull(Proto.parse(byteArrayOf(0x00, 0x01)))
@@ -94,9 +112,11 @@ class ProtoTest {
 
     @Test
     fun `таблица параметров совпадает с прошивкой`() {
-        // v8: BOOT_GRACE_S (id 11) убран из прошивки
-        assertEquals(11, Params.COUNT)
-        assertEquals(Params.SLEEP_TOUT_S, Params.all.last().id)
+        // v8 убрал BOOT_GRACE_S, v9 занял тот же id 11 под VBAT_MIN_MV
+        assertEquals(12, Params.COUNT)
+        assertEquals(Params.VBAT_MIN_MV, Params.all.last().id)
+        assertEquals(3000, Params.spec(Params.VBAT_MIN_MV)!!.default)
+        assertEquals(4200, Params.spec(Params.VBAT_MIN_MV)!!.max)
         assertEquals(Params.COUNT, Params.all.size)
         assertEquals(Params.all.indices.toList(), Params.all.map { it.id })
         // Значения из Settings_Defaults

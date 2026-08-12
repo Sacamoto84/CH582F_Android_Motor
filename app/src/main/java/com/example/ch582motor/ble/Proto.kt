@@ -160,6 +160,7 @@ enum class StopReason(val title: String) {
     NONE("—"),
     USER("Остановлено пользователем"),
     TIMEOUT("Сработал авто-стоп MAX_RUN_S"),
+    LOW_BATTERY("Пуск заблокирован: банка разряжена"),
     UNKNOWN("—");
 
     companion object {
@@ -167,6 +168,7 @@ enum class StopReason(val title: String) {
             0 -> NONE
             1 -> USER
             2 -> TIMEOUT
+            3 -> LOW_BATTERY
             else -> UNKNOWN
         }
     }
