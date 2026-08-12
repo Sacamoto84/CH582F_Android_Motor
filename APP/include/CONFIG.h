@@ -109,7 +109,7 @@
 
 /* Автоматический сон стека между событиями BLE (штатно FALSE) */
 #ifndef HAL_SLEEP
-#define HAL_SLEEP                           FALSE
+#define HAL_SLEEP                           TRUE
 #endif
 
 /* Только роль Peripheral, одно соединение. Центральная роль не нужна —
@@ -189,7 +189,7 @@
 #define BLE_TX_NUM_EVENT                    1
 #endif
 #ifndef BLE_TX_POWER
-#define BLE_TX_POWER                        LL_TX_POWEER_0_DBM
+#define BLE_TX_POWER                        LL_TX_POWEER_MINUS_5_DBM
 #endif
 
 extern uint32_t MEM_BUF[BLE_MEMHEAP_SIZE / 4];
