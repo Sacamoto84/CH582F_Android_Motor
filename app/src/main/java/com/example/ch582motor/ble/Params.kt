@@ -7,6 +7,9 @@ package com.example.ch582motor.ble
  * Про частоты: прошивка проверяет только нижнюю границу (919 Гц, аппаратный
  * предел делителя ШИМ), но значение едет как uint16, поэтому потолок — 65535.
  * Верхний предел железа (~234 кГц) недостижим через протокол.
+ *
+ * BOOT_GRACE_S (id 11) убран вместе с версией настроек 8: окно держали ради
+ * отладчика, а проект заливается через ISP.
  */
 enum class ParamKind { NUMBER, SWITCH, ENUM }
 
@@ -47,9 +50,8 @@ object Params {
     const val VBAT_SCALE_Q12 = 8
     const val VDROP_LEVEL = 9
     const val SLEEP_TOUT_S = 10
-    const val BOOT_GRACE_S = 11
 
-    const val COUNT = 12
+    const val COUNT = 11
 
     /** Нижняя граница частоты ШИМ — аппаратное ограничение, меньше чип не умеет. */
     const val PWM_HZ_MIN = 919
@@ -119,12 +121,6 @@ object Params {
             unit = "с", min = 0, max = 600, default = 60, kind = ParamKind.NUMBER,
             hint = "Считается, только когда помпа стоит и никто не подключён. " +
                 "0 — не спать вообще.",
-        ),
-        ParamSpec(
-            id = BOOT_GRACE_S, key = "BOOT_GRACE_S", title = "Окно после сброса",
-            unit = "с", min = 0, max = 600, default = 30, kind = ParamKind.NUMBER,
-            hint = "Столько секунд после включения сон запрещён — успеть зацепиться " +
-                "отладчиком.",
         ),
     )
 

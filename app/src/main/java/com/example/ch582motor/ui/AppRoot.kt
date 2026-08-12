@@ -1,10 +1,14 @@
 package com.example.ch582motor.ui
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -20,8 +24,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -37,6 +43,13 @@ fun AppRoot(vm: MotorViewModel = viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     var tab by remember { mutableIntStateOf(0) }
+    var confirmDisconnect by remember { mutableStateOf(false) }
+
+    // Прошивка ничего не сохраняет сама: уйти со связи с несохранёнными
+    // изменениями значит потерять их при следующем сбросе или сне.
+    val leaveOrConfirm = {
+        if (state.dirty) confirmDisconnect = true else vm.disconnect()
+    }
 
     LaunchedEffect(Unit) {
         vm.messages.collect { snackbar.showSnackbar(it) }
@@ -50,7 +63,7 @@ fun AppRoot(vm: MotorViewModel = viewModel()) {
                 title = { Text(if (state.connected) "Помпа" else "Помпа — не подключена") },
                 actions = {
                     if (state.connected) {
-                        TextButton(onClick = vm::disconnect) { Text("Отключить") }
+                        TextButton(onClick = leaveOrConfirm) { Text("Отключить") }
                     }
                 },
             )
@@ -97,6 +110,8 @@ fun AppRoot(vm: MotorViewModel = viewModel()) {
                 }
             }
 
+            if (state.dirty) UnsavedBanner(onSave = vm::save)
+
             when (tab) {
                 0 -> MonitorScreen(
                     state = state,
@@ -104,7 +119,7 @@ fun AppRoot(vm: MotorViewModel = viewModel()) {
                     onStop = vm::stop,
                     onSave = vm::save,
                     onSleep = vm::sleep,
-                    onDisconnect = vm::disconnect,
+                    onDisconnect = leaveOrConfirm,
                 )
 
                 1 -> SettingsScreen(
@@ -125,6 +140,61 @@ fun AppRoot(vm: MotorViewModel = viewModel()) {
                     onSave = vm::save,
                 )
             }
+        }
+
+        if (confirmDisconnect) {
+            AlertDialog(
+                onDismissRequest = { confirmDisconnect = false },
+                title = { Text("Отключиться без сохранения?") },
+                text = {
+                    Text(
+                        "Изменения уже действуют, но во flash не записаны — они " +
+                            "пропадут при сбросе питания или уходе в сон.",
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        confirmDisconnect = false
+                        vm.save()
+                        vm.disconnect()
+                    }) { Text("Сохранить и выйти") }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        confirmDisconnect = false
+                        vm.disconnect()
+                    }) { Text("Выйти без сохранения") }
+                },
+            )
+        }
+    }
+}
+
+/** Прошивка не сохраняет сама — напоминаем и даём кнопку под рукой. */
+@Composable
+private fun UnsavedBanner(onSave: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+        ),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
+                Text(
+                    "Есть несохранённые изменения",
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Text(
+                    "Уже действуют, но пропадут при сбросе или уходе в сон",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            TextButton(onClick = onSave) { Text("Сохранить") }
         }
     }
 }

@@ -94,6 +94,9 @@ class ProtoTest {
 
     @Test
     fun `таблица параметров совпадает с прошивкой`() {
+        // v8: BOOT_GRACE_S (id 11) убран из прошивки
+        assertEquals(11, Params.COUNT)
+        assertEquals(Params.SLEEP_TOUT_S, Params.all.last().id)
         assertEquals(Params.COUNT, Params.all.size)
         assertEquals(Params.all.indices.toList(), Params.all.map { it.id })
         // Значения из Settings_Defaults

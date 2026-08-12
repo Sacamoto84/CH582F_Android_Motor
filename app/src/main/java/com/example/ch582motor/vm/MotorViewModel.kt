@@ -43,6 +43,11 @@ data class UiState(
     val pending: Set<Int> = emptySet(),
     val paramsLoaded: Boolean = false,
     val busy: Boolean = false,
+    /**
+     * Есть принятые устройством изменения, которые ещё не записаны во flash.
+     * Прошивка сама их не сохраняет — только по команде SAVE.
+     */
+    val dirty: Boolean = false,
 ) {
     fun value(id: Int): Int? = edited[id] ?: params[id]
     val connected: Boolean get() = phase.isReady
@@ -94,6 +99,7 @@ class MotorViewModel(app: Application) : AndroidViewModel(app) {
                     telemetry = null,
                     paramsLoaded = false,
                     pending = emptySet(),
+                    dirty = false,
                 )
 
                 else -> st.copy(phase = phase)
@@ -204,6 +210,7 @@ class MotorViewModel(app: Application) : AndroidViewModel(app) {
                         st.copy(
                             params = st.params + (expect.id to expect.newValue),
                             pending = st.pending - expect.id,
+                            dirty = true,
                         )
                     }
                     // PWM_MIN и PWM_MAX прошивка может поменять местами — перечитать.
@@ -225,11 +232,23 @@ class MotorViewModel(app: Application) : AndroidViewModel(app) {
 
             is Expect.Command -> {
                 if (!ack.ok) {
-                    notify("${Cmd.name(expect.code)}: команда отвергнута")
+                    // Прошивка отказывает в записи на ходу: стирание страницы
+                    // заморозило бы выход ШИМ на десятки миллисекунд.
+                    notify(
+                        if (expect.code == Cmd.SAVE) {
+                            "Сохранение отклонено: сначала остановите помпу"
+                        } else {
+                            "${Cmd.name(expect.code)}: команда отвергнута"
+                        },
+                    )
                     return
                 }
                 when (expect.code) {
-                    Cmd.SAVE -> notify("Настройки записаны во flash")
+                    Cmd.SAVE -> {
+                        _state.update { it.copy(dirty = false) }
+                        notify("Настройки записаны во flash")
+                    }
+
                     Cmd.FACTORY_RESET -> {
                         notify("Заводские значения восстановлены")
                         viewModelScope.launch { runCatching { loadAllParams() } }
@@ -257,6 +276,8 @@ class MotorViewModel(app: Application) : AndroidViewModel(app) {
         for (spec in Params.all) {
             if (!readParam(spec.id)) missing += spec.id
         }
+        // Прочитанное совпадает с тем, что во flash, — сохранять нечего.
+        _state.update { it.copy(dirty = false) }
         if (missing.isNotEmpty()) {
             notify("Не прочитаны параметры: " + missing.joinToString { Params.title(it) })
         }
