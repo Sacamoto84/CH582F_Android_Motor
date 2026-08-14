@@ -1,27 +1,23 @@
 /********************************************************************************
- * ubutton.h — автомат кнопки, порт uButtonVirt.h из
- *             github.com/Sacamoto84/CH32V003_MotorControl_Volume
+ * ubutton.h — автомат кнопки
  *
- * Последовательность состояний сохранена, чтобы поведение кнопки для
- * пользователя совпадало с прошивкой на CH32V003. Отличие в реализации:
- * там C++ и millis(), здесь C и шаг тика. Из таймингов разошёлся только
- * UB_HOLD_TIME, см. комментарий к нему.
+ * Ужатый порт uButtonVirt.h из
+ * github.com/Sacamoto84/CH32V003_MotorControl_Volume.
  *
- * Из оригинала выброшена «лестница» импульсов удержания (Step/WaitNextStep/
- * ReleaseStep) вместе со счётчиком шагов: она открывала четыре экрана
- * настройки, а настройки переехали в BLE. Всё остальное на месте.
+ * От оригинала осталось два события: нажатие и удержание. Всё, что там
+ * обслуживало настройку без экрана, выброшено — и «лестница» импульсов
+ * удержания с четырьмя экранами (SET_POWER, SET_BOOST_ENABLE, SET_BOOST_POWER,
+ * SET_BOOST_TIME), и счётчик кликов с окнами накопления и таймаута. Настройки
+ * переехали в BLE, кнопке остались пуск/стоп и вход в ISP-загрузчик.
  *
  * Автомат вызывается раз в MOTOR_TICK_MS (10 мс), что совпадает с дебаунсом
  * оригинала. События живут ровно один тик — проверять сразу после UB_Tick().
  *
- *   Idle ──нажали──> Press ──> WaitHold ──отпустили──> Click ──┐
- *                                  │                           │
- *                            5000 мс│                          ├──> Release
- *                                  ▼                           │
- *                                Hold ──> WaitRelease ──────────┘
- *                                          (ReleaseHold, клики сброшены)
- *
- *   Release ──> WaitClicks (500 мс) ──> Clicks ──> WaitTimeout (1000 мс) ──> Timeout
+ *   Idle ──нажали──> Press ──> WaitHold ──отпустили──> Idle
+ *                                  │
+ *                            5000 мс│
+ *                                  ▼
+ *                                Hold ──> WaitRelease ──отпустили──> Idle
  *******************************************************************************/
 #ifndef __UBUTTON_H
 #define __UBUTTON_H
@@ -29,27 +25,19 @@
 #include <stdint.h>
 
 #define UB_DEB_TIME     10      /* дебаунс */
+
 /* Единственное расхождение с оригиналом на CH32V003, где стояло 2000 мс.
  * Удержание здесь ведёт в ISP-загрузчик, и случайно попасть туда неприятно:
  * 5 секунд коротким нажатием не наберёшь. */
 #define UB_HOLD_TIME    5000    /* до состояния «удержание» */
-#define UB_CLICK_TIME   500     /* окно накопления кликов */
-#define UB_TOUT_TIME    1000    /* до события «таймаут» */
 
 typedef enum
 {
     UB_IDLE = 0,
-    UB_PRESS,           /* событие */
-    UB_CLICK,           /* событие: отпущено до удержания */
+    UB_PRESS,           /* событие: нажали                       */
     UB_WAIT_HOLD,
-    UB_HOLD,            /* событие */
-    UB_WAIT_RELEASE,
-    UB_RELEASE_HOLD,    /* событие: отпущено после удержания */
-    UB_RELEASE,         /* событие: отпущено в любом случае */
-    UB_WAIT_CLICKS,
-    UB_CLICKS,          /* событие: серия кликов досчитана */
-    UB_WAIT_TIMEOUT,
-    UB_TIMEOUT          /* событие */
+    UB_HOLD,            /* событие: держат дольше UB_HOLD_TIME   */
+    UB_WAIT_RELEASE
 } ub_state_t;
 
 typedef struct
@@ -59,7 +47,6 @@ typedef struct
     uint16_t   deb;         /* мс стабильного уровня */
     uint8_t    raw;         /* последний сырой уровень */
     uint8_t    stable;      /* уровень после дебаунса */
-    uint8_t    clicks;
 } ubutton_t;
 
 void UB_Init(ubutton_t *b);
@@ -70,16 +57,9 @@ void UB_Tick(ubutton_t *b, uint8_t pressed, uint16_t dt_ms);
 
 /* Событийные предикаты — истинны ровно один тик */
 #define UB_Press(b)         ((b)->state == UB_PRESS)
-#define UB_Click(b)         ((b)->state == UB_CLICK)
 #define UB_Hold(b)          ((b)->state == UB_HOLD)
-#define UB_ReleaseHold(b)   ((b)->state == UB_RELEASE_HOLD)
-#define UB_Release(b)       ((b)->state == UB_RELEASE)
-#define UB_HasClicks(b)     ((b)->state == UB_CLICKS)
-#define UB_Timeout(b)       ((b)->state == UB_TIMEOUT)
 
-#define UB_GetClicks(b)     ((b)->clicks)
-
-/* Кнопка сейчас в работе — нажата или идёт накопление кликов */
+/* Кнопка сейчас нажата или дебаунсится */
 #define UB_Busy(b)          ((b)->state != UB_IDLE)
 
 #endif /* __UBUTTON_H */

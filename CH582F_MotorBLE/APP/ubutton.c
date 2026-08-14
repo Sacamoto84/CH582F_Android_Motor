@@ -1,5 +1,5 @@
 /********************************************************************************
- * ubutton.c — автомат кнопки, порт uButtonVirt.h с CH32V003
+ * ubutton.c — автомат кнопки, ужатый порт uButtonVirt.h с CH32V003
  *******************************************************************************/
 #include "ubutton.h"
 
@@ -10,14 +10,12 @@ void UB_Init(ubutton_t *b)
     b->deb    = 0;
     b->raw    = 0;
     b->stable = 0;
-    b->clicks = 0;
 }
 
 void UB_Reset(ubutton_t *b)
 {
-    b->state  = UB_IDLE;
-    b->tmr    = 0;
-    b->clicks = 0;
+    b->state = UB_IDLE;
+    b->tmr   = 0;
 }
 
 /*********************************************************************
@@ -51,6 +49,10 @@ static void debounce(ubutton_t *b, uint8_t pressed, uint16_t dt_ms)
  *
  * @brief   Один шаг автомата. Однотактовые состояния-события живут ровно
  *          один вызов, поэтому предикаты читать сразу после.
+ *
+ *          Короткое нажатие отдельным событием не оформляется: помпа
+ *          переключается сразу по UB_PRESS, и отпускание уже ничего
+ *          не значит. Поэтому из WAIT_HOLD отпускание ведёт прямо в IDLE.
  */
 void UB_Tick(ubutton_t *b, uint8_t pressed, uint16_t dt_ms)
 {
@@ -69,19 +71,18 @@ void UB_Tick(ubutton_t *b, uint8_t pressed, uint16_t dt_ms)
 
         case UB_PRESS:
             b->state = UB_WAIT_HOLD;
-            b->tmr = 0;
+            b->tmr   = 0;
             break;
 
         case UB_WAIT_HOLD:
             if(!p)
             {
-                b->state = UB_CLICK;
-                b->clicks++;
+                b->state = UB_IDLE;
             }
             else if(b->tmr >= UB_HOLD_TIME)
             {
                 b->state = UB_HOLD;
-                b->tmr = 0;
+                b->tmr   = 0;
             }
             break;
 
@@ -89,46 +90,10 @@ void UB_Tick(ubutton_t *b, uint8_t pressed, uint16_t dt_ms)
             b->state = UB_WAIT_RELEASE;
             break;
 
+        /* Сюда попадаем уже взведя сброс: ждём, пока отпустят, чтобы
+         * повторное удержание не начало отсчёт заново. */
         case UB_WAIT_RELEASE:
-            if(!p) b->state = UB_RELEASE_HOLD;
-            break;
-
-        case UB_RELEASE_HOLD:
-            /* Удержание не считается кликом — как в оригинале. */
-            b->clicks = 0;
-            b->state  = UB_RELEASE;
-            break;
-
-        case UB_CLICK:
-            b->state = UB_RELEASE;
-            break;
-
-        case UB_RELEASE:
-            b->state = b->clicks ? UB_WAIT_CLICKS : UB_WAIT_TIMEOUT;
-            b->tmr = 0;
-            break;
-
-        case UB_WAIT_CLICKS:
-            if(p) b->state = UB_PRESS;
-            else if(b->tmr >= UB_CLICK_TIME)
-            {
-                b->state = UB_CLICKS;
-                b->tmr = 0;
-            }
-            break;
-
-        case UB_CLICKS:
-            b->clicks = 0;
-            b->state  = UB_WAIT_TIMEOUT;
-            break;
-
-        case UB_WAIT_TIMEOUT:
-            if(p) b->state = UB_PRESS;
-            else if(b->tmr >= UB_TOUT_TIME) b->state = UB_TIMEOUT;
-            break;
-
-        case UB_TIMEOUT:
-            b->state = UB_IDLE;
+            if(!p) b->state = UB_IDLE;
             break;
 
         default:
