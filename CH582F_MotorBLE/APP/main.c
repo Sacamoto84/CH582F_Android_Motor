@@ -16,6 +16,12 @@
 
 __attribute__((aligned(4))) uint32_t MEM_BUF[BLE_MEMHEAP_SIZE / 4];
 
+/* Код причины сброса из R8_RESET_STATUS. Индексы совпадают с таблицей
+ * имён в main(): 001 — «подача питания ИЛИ LVR». */
+#define RESET_FLAG_RPOR     0x01
+
+static uint8_t s_reset_flag;
+
 #if(defined(BLE_MAC)) && (BLE_MAC == TRUE)
 const uint8_t MacAddr[6] = {0x84, 0xC2, 0xE4, 0x03, 0x02, 0x02};
 #endif
@@ -205,7 +211,8 @@ int main(void)
             "GRWSM",    /* 101 пробуждение из Shutdown               */
             "?", "?"
         };
-        PRINT("reset: %s\n", rst[R8_RESET_STATUS & RB_RESET_FLAG]);
+        s_reset_flag = R8_RESET_STATUS & RB_RESET_FLAG;
+        PRINT("reset: %s\n", rst[s_reset_flag]);
     }
 
     Board_Init();
@@ -223,6 +230,21 @@ int main(void)
 
     Peripheral_Init();
     Motor_Init();
+
+    /* Голос на сброс типа «подача питания». Ловить надо LVR: провал VDD33
+     * ниже 2.3 В, который детектор просадки почему-то не перехватил.
+     *
+     * Отличить LVR от честной подачи питания нельзя — флаг у них общий,
+     * поэтому сигнал звучит и при вставке банки. Зато остальные причины
+     * сюда не попадают, у каждой свой код: пробуждение из сна GRWSM,
+     * сторожевой таймер WDOG, сброс по удержанию кнопки идёт через
+     * reboot_as_power_on()... а вот он как раз даёт RPOR намеренно.
+     * То есть после удержания кнопки сигнал прозвучит — так и должно быть,
+     * это подтверждение, что механизм отработал.
+     *
+     * Ставится после Motor_Init(): длительности отсчитывает Buzzer_Tick()
+     * из задачи мотора, до её запуска мелодия не поехала бы. */
+    if(s_reset_flag == RESET_FLAG_RPOR) buzzer_critical();
 
     Main_Circulation();
 }
