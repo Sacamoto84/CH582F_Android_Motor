@@ -298,14 +298,7 @@ uint8_t Motor_Start(void)
 }
 
 void Motor_Stop(void)   { s_cmd_stop  = 1; s_cmd_start = 0; Motor_KickIdle(); }
-/* Пуск может стоять в очереди из-за паузы MOTOR_RESTART_MS. Тогда второе
- * нажатие отменяет его, а не ставит второй такой же — иначе частые нажатия
- * перестали бы переключать помпу. */
-void Motor_Toggle(void)
-{
-    if((s_state == M_IDLE) && !s_cmd_start) (void)Motor_Start();
-    else                                    Motor_Stop();
-}
+void Motor_Toggle(void) { if(s_state == M_IDLE) (void)Motor_Start(); else Motor_Stop(); }
 
 uint8_t       Motor_IsStopped(void) { return (s_state == M_IDLE); }
 motor_state_t Motor_GetState(void)  { return s_state; }
@@ -425,7 +418,6 @@ void Motor_Init(void)
 
     s_state = M_IDLE;
     s_idle_ms = 0;
-    s_state_ms = MOTOR_RESTART_MS;   /* первый пуск после старта не ждёт паузу */
 
     tmos_start_task(Motor_TaskID, MOTOR_EVT_TICK, MS1_TO_SYSTEM_TIME(MOTOR_TICK_MS));
 }
@@ -443,19 +435,12 @@ static void handle_commands(void)
     }
 
     if(!s_cmd_start) return;
-
-    if(s_state != M_IDLE)
-    {
-        s_cmd_start = 0;            /* уже крутится, запрос неактуален */
-        return;
-    }
-
-    /* Пауза после остановки. Запрос НЕ сбрасываем: пользователь нажал,
-     * значит пуск он хочет — исполним, как только пауза выдержана.
-     * В M_IDLE s_state_ms считает время с момента остановки. */
-    if(s_state_ms < MOTOR_RESTART_MS) return;
-
     s_cmd_start = 0;
+
+    /* Пуск имеет смысл только из покоя. Паузы между пусками намеренно нет:
+     * на каждое нажатие должна быть реакция, даже если нажимают пачкой.
+     * Бросок тока при этом срезает плавный пуск, а не отказ в старте. */
+    if(s_state != M_IDLE) return;
 
     /* Сначала защита, потом ток. В обратном порядке бросок пуска приходился
      * на окно, когда детектор просадки ещё не взведён. */
