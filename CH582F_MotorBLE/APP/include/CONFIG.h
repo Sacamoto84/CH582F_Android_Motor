@@ -98,7 +98,7 @@
 /* На WeAct Core Board V1.0 дроссель L1 22 мкГн между VSW и VDCID разведён,
  * VDCID зашунтирован 2.2 мкФ, VINTA — 1 мкФ. Всё как требует даташит. */
 #ifndef DCDC_ENABLE
-#define DCDC_ENABLE                         TRUE
+#define DCDC_ENABLE                         FALSE
 #endif
 
 /* На плате стоит кварц X1 32.768 кГц ±10ppm на PA10/PA11 — он точнее
@@ -109,7 +109,7 @@
 
 /* Автоматический сон стека между событиями BLE (штатно FALSE) */
 #ifndef HAL_SLEEP
-#define HAL_SLEEP                           TRUE
+#define HAL_SLEEP                           FALSE
 #endif
 
 /* Только роль Peripheral, одно соединение. Центральная роль не нужна —
