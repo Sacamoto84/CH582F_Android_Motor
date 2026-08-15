@@ -33,6 +33,7 @@ static uint16_t s_vbat_mv;
 
 static uint32_t s_state_ms;           /* время в текущем состоянии   */
 static uint32_t s_run_ms;             /* время непрерывной работы    */
+static uint32_t s_start_ms;           /* мс с момента пуска, для плавного нарастания */
 static uint32_t s_idle_ms;
 static uint8_t  s_force_sleep;        /* команда «уснуть» по BLE */
 static uint16_t s_vbat_div;           /* делитель периода замера VBAT */
@@ -148,8 +149,39 @@ static uint16_t pot_to_permille(void)
     return (uint16_t)(g_set.pwm_min + ((uint32_t)s_pot_raw * span) / 4095U);
 }
 
+/*********************************************************************
+ * @fn      soft_start_cap
+ *
+ * @brief   Потолок скважности во время плавного пуска. Растёт линейно
+ *          от MOTOR_SOFT_START_PM до 1000 за MOTOR_SOFT_START_MS,
+ *          считая от момента пуска. Дальше не ограничивает.
+ */
+static uint16_t soft_start_cap(void)
+{
+#if(MOTOR_SOFT_START_MS > 0)
+    if(s_start_ms >= MOTOR_SOFT_START_MS) return 1000;
+
+    return (uint16_t)(MOTOR_SOFT_START_PM +
+        ((1000UL - MOTOR_SOFT_START_PM) * s_start_ms) / MOTOR_SOFT_START_MS);
+#else
+    return 1000;
+#endif
+}
+
+/*********************************************************************
+ * @fn      apply_pwm
+ *
+ * @brief   Единственная точка выдачи скважности, поэтому потолок плавного
+ *          пуска стоит именно здесь: он накрывает и рывок, и работу от
+ *          ручки, и любой будущий режим. В телеметрию уходит то, что
+ *          реально выдано, а не то, что запрошено.
+ */
 static void apply_pwm(uint16_t pm)
 {
+    uint16_t cap = soft_start_cap();
+
+    if(pm > cap) pm = cap;
+
     s_pwm_pm = pm;
     MotorPwm_SetDutyPermille(pm);
 }
@@ -266,7 +298,14 @@ uint8_t Motor_Start(void)
 }
 
 void Motor_Stop(void)   { s_cmd_stop  = 1; s_cmd_start = 0; Motor_KickIdle(); }
-void Motor_Toggle(void) { if(s_state == M_IDLE) (void)Motor_Start(); else Motor_Stop(); }
+/* Пуск может стоять в очереди из-за паузы MOTOR_RESTART_MS. Тогда второе
+ * нажатие отменяет его, а не ставит второй такой же — иначе частые нажатия
+ * перестали бы переключать помпу. */
+void Motor_Toggle(void)
+{
+    if((s_state == M_IDLE) && !s_cmd_start) (void)Motor_Start();
+    else                                    Motor_Stop();
+}
 
 uint8_t       Motor_IsStopped(void) { return (s_state == M_IDLE); }
 motor_state_t Motor_GetState(void)  { return s_state; }
@@ -386,6 +425,7 @@ void Motor_Init(void)
 
     s_state = M_IDLE;
     s_idle_ms = 0;
+    s_state_ms = MOTOR_RESTART_MS;   /* первый пуск после старта не ждёт паузу */
 
     tmos_start_task(Motor_TaskID, MOTOR_EVT_TICK, MS1_TO_SYSTEM_TIME(MOTOR_TICK_MS));
 }
@@ -402,28 +442,42 @@ static void handle_commands(void)
         return;
     }
 
-    if(s_cmd_start && (s_state == M_IDLE))
-    {
-        MotorPwm_Enable();
-        vdrop_monitor(1);
-        s_state_ms    = 0;
-        s_run_ms      = 0;
-        s_stop_reason = STOPREASON_NONE;
+    if(!s_cmd_start) return;
 
-        if(g_set.boost_en && g_set.boost_time)
-        {
-            MotorPwm_SetFreq(g_set.pwm_freq_boost);
-            apply_pwm(boost_permille());
-            s_state = M_BOOST;
-        }
-        else
-        {
-            MotorPwm_SetFreq(g_set.pwm_freq_run);
-            apply_pwm(pot_to_permille());
-            s_state = M_RUN;
-        }
+    if(s_state != M_IDLE)
+    {
+        s_cmd_start = 0;            /* уже крутится, запрос неактуален */
+        return;
     }
+
+    /* Пауза после остановки. Запрос НЕ сбрасываем: пользователь нажал,
+     * значит пуск он хочет — исполним, как только пауза выдержана.
+     * В M_IDLE s_state_ms считает время с момента остановки. */
+    if(s_state_ms < MOTOR_RESTART_MS) return;
+
     s_cmd_start = 0;
+
+    /* Сначала защита, потом ток. В обратном порядке бросок пуска приходился
+     * на окно, когда детектор просадки ещё не взведён. */
+    vdrop_monitor(1);
+    MotorPwm_Enable();
+    s_state_ms    = 0;
+    s_run_ms      = 0;
+    s_start_ms    = 0;              /* отсюда считается плавный пуск */
+    s_stop_reason = STOPREASON_NONE;
+
+    if(g_set.boost_en && g_set.boost_time)
+    {
+        MotorPwm_SetFreq(g_set.pwm_freq_boost);
+        apply_pwm(boost_permille());
+        s_state = M_BOOST;
+    }
+    else
+    {
+        MotorPwm_SetFreq(g_set.pwm_freq_run);
+        apply_pwm(pot_to_permille());
+        s_state = M_RUN;
+    }
 }
 
 /*********************************************************************
@@ -434,6 +488,7 @@ static void handle_commands(void)
 static void run_state_machine(void)
 {
     s_state_ms += MOTOR_TICK_MS;
+    if(s_state != M_IDLE) s_start_ms += MOTOR_TICK_MS;
 
     switch(s_state)
     {
@@ -441,6 +496,10 @@ static void run_state_machine(void)
             break;
 
         case M_BOOST:
+            /* Переприкладываем каждый тик: пока идёт плавный пуск, потолок
+             * растёт, и рывок должен подниматься вместе с ним. */
+            apply_pwm(boost_permille());
+
             if(s_state_ms >= g_set.boost_time)
             {
                 MotorPwm_SetFreq(g_set.pwm_freq_run);
