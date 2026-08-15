@@ -6,7 +6,7 @@
  *   X32MI/MO   кварц X2 32 МГц             → обязателен для BLE
  *   пины 3-4   дроссель L1 22 мкГн         → DC-DC разведён, можно включать
  *   PA8        синий LED D2 через R1 5.1к на VDD33 → активный низкий
- *   PB23       кнопка K1 «RST»
+ *   PB23       кнопка K1 «RST» — вывод сброса, CFG_RESET_EN включён
  *   PB22       кнопка K2 «BOOT» — используем как пользовательскую
  *   PB10/PB11  скорее всего UD-/UD+ на разъём USB-C — не занимать
  *   U2         LDO ME6216A33 → 3.3 В, вход VDD5V (через диод D1 с USB)
@@ -115,10 +115,10 @@
  * GPIO; PB10/PB11 — линии USB, через них идёт прошивка по ISP, ножки
  * принадлежат загрузчику и USB-хосту.
  *
- * PB23 — кнопка K1 на землю, подтяжка вверх как у K2. */
+ * PB23 — вывод сброса RST#. Опция CFG_RESET_EN включена, снаружи вывод
+ * подтянут к 3.3 В, так что это больше не GPIO и настраивать его нечем. */
 #define UNUSED_PINS_A_PD        (GPIO_Pin_4 | GPIO_Pin_5)
 #define UNUSED_PINS_B_PD        (GPIO_Pin_12 | GPIO_Pin_13)
-#define UNUSED_PINS_B_PU        (GPIO_Pin_23)
 
 #define POT_PWR_ON()            GPIOA_SetBits(PIN_POT_PWR)
 #define POT_PWR_OFF()           GPIOA_ResetBits(PIN_POT_PWR)

@@ -66,7 +66,6 @@ static void Board_Init(void)
      * гасит их вручную. */
     GPIOA_ModeCfg(UNUSED_PINS_A_PD, GPIO_ModeIN_PD);
     GPIOB_ModeCfg(UNUSED_PINS_B_PD, GPIO_ModeIN_PD);
-    GPIOB_ModeCfg(UNUSED_PINS_B_PU, GPIO_ModeIN_PU);
 }
 
 /*********************************************************************
