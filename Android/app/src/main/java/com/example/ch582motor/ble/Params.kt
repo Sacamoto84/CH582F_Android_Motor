@@ -81,8 +81,10 @@ object Params {
         ),
         ParamSpec(
             id = PWM_FREQ_BOOST, key = "PWM_FREQ_BOOST", title = "Частота на время рывка",
-            unit = "Гц", min = PWM_HZ_MIN, max = 65535, default = 1000, kind = ParamKind.NUMBER,
-            hint = "Низкая частота на старте даёт больший момент, но мотор слышно.",
+            unit = "Гц", min = PWM_HZ_MIN, max = 65535, default = 16000, kind = ParamKind.NUMBER,
+            hint = "Момент от частоты не зависит — его задаёт скважность. Низкая " +
+                "частота только добавляет пульсации тока, нагрев ключа и слышимый " +
+                "писк. Ставьте столько же, сколько и рабочую.",
         ),
         ParamSpec(
             id = BOOST_EN, key = "BOOST_EN", title = "Стартовый рывок",
