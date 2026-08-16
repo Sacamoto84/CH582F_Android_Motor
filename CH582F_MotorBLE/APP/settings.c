@@ -77,6 +77,11 @@ void Settings_Defaults(void)
     /* 3.0 В — нижняя граница разряда 1S Li-ion. Ниже помпу не пускаем:
      * глубокий разряд убивает банку, а просадка под 0.7 А уронит чип. */
     g_set.vbat_min_mv    = 3000;
+
+    /* Полная шкала АЦП по умолчанию: значение нейтральное, ход ручки просто
+     * не дотянет до pwm_max. Настоящее число снимается с железа и ставится
+     * по BLE — см. комментарий к pot_to_permille(). */
+    g_set.pot_raw_max    = 4095;
 }
 
 /*********************************************************************
@@ -185,6 +190,7 @@ uint16_t Settings_Get(uint8_t id)
         case PID_VDROP_LEVEL:    return g_set.vdrop_level;
         case PID_SLEEP_TOUT_S:   return g_set.sleep_tout_s;
         case PID_VBAT_MIN_MV:    return g_set.vbat_min_mv;
+        case PID_POT_RAW_MAX:    return g_set.pot_raw_max;
         default:                 return 0;
     }
 }
@@ -211,6 +217,10 @@ uint8_t Settings_Set(uint8_t id, uint16_t v)
         /* Выше 4.2 В смысла нет: заряженная банка 1S столько и даёт,
          * порог выше сделал бы помпу неработоспособной навсегда. */
         case PID_VBAT_MIN_MV:    if(v > 4200) return 0; g_set.vbat_min_mv = v; break;
+        /* Ниже 100 ручка стала бы неуправляемо резкой, выше 4095 АЦП
+         * не выдаёт — там 12 бит. */
+        case PID_POT_RAW_MAX:    if(v < 100 || v > 4095) return 0;
+                                 g_set.pot_raw_max = v; break;
         default:                 return 0;
     }
 

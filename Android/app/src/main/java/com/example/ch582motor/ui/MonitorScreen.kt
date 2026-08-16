@@ -43,6 +43,12 @@ fun MonitorScreen(
     val cutoffMv = state.value(Params.VBAT_MIN_MV) ?: 0
     val belowCutoff = cutoffMv > 0 && telemetry != null && telemetry.vbatMv < cutoffMv
 
+    // Проценты и полоска считаются от калиброванного верха, а не от 4095:
+    // ручка до полной шкалы АЦП не достаёт. Сырое число показываем как есть —
+    // именно его переписывают в POT_RAW_MAX при калибровке.
+    val potMax = (state.value(Params.POT_RAW_MAX) ?: Params.ADC_FULL_SCALE)
+        .coerceAtLeast(1)
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -91,9 +97,9 @@ fun MonitorScreen(
                 GaugeRow(
                     label = "Ручка",
                     value = telemetry?.let {
-                        "%d  (%.0f %%)".format(it.potRaw, it.potRaw * 100.0 / 4095)
+                        "%d  (%.0f %%)".format(it.potRaw, it.potRaw * 100.0 / potMax)
                     } ?: "—",
-                    fraction = (telemetry?.potRaw ?: 0) / 4095f,
+                    fraction = (telemetry?.potRaw ?: 0) / potMax.toFloat(),
                 )
                 StatRow(
                     label = "Напряжение банки",

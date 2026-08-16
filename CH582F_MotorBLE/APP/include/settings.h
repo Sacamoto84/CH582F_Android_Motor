@@ -27,7 +27,7 @@
 #define SETTINGS_SLOT_A     0x1000
 #define SETTINGS_SLOT_B     0x1100
 #define SETTINGS_MAGIC      0x4D50      /* 'PM' — pump */
-#define SETTINGS_VERSION    9           /* v9: + vbat_min_mv */
+#define SETTINGS_VERSION    10          /* v10: + pot_raw_max */
 
 typedef struct __attribute__((packed))
 {
@@ -47,6 +47,7 @@ typedef struct __attribute__((packed))
     uint16_t vdrop_level;        /* сброс по просадке VDD33, 0 = выкл */
     uint16_t sleep_tout_s;       /* 0 — не засыпать */
     uint16_t vbat_min_mv;        /* отсечка по разряду, 0 = выключена */
+    uint16_t pot_raw_max;        /* отсчёт АЦП = полный ход ручки */
 
     uint16_t crc;
 } settings_t;

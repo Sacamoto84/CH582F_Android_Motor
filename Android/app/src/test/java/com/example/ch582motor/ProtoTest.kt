@@ -112,11 +112,14 @@ class ProtoTest {
 
     @Test
     fun `таблица параметров совпадает с прошивкой`() {
-        // v8 убрал BOOT_GRACE_S, v9 занял тот же id 11 под VBAT_MIN_MV
-        assertEquals(12, Params.COUNT)
-        assertEquals(Params.VBAT_MIN_MV, Params.all.last().id)
+        // v8 убрал BOOT_GRACE_S, v9 занял тот же id 11 под VBAT_MIN_MV,
+        // v10 добавил POT_RAW_MAX
+        assertEquals(13, Params.COUNT)
+        assertEquals(Params.POT_RAW_MAX, Params.all.last().id)
         assertEquals(3000, Params.spec(Params.VBAT_MIN_MV)!!.default)
         assertEquals(4200, Params.spec(Params.VBAT_MIN_MV)!!.max)
+        assertEquals(4095, Params.spec(Params.POT_RAW_MAX)!!.default)
+        assertEquals(100, Params.spec(Params.POT_RAW_MAX)!!.min)
         assertEquals(Params.COUNT, Params.all.size)
         assertEquals(Params.all.indices.toList(), Params.all.map { it.id })
         // Значения из Settings_Defaults
