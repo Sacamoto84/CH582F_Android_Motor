@@ -19,6 +19,7 @@ __attribute__((aligned(4))) uint32_t MEM_BUF[BLE_MEMHEAP_SIZE / 4];
 /* Код причины сброса из R8_RESET_STATUS. Индексы совпадают с таблицей
  * имён в main(): 001 — «подача питания ИЛИ LVR». */
 #define RESET_FLAG_RPOR     0x01
+#define RESET_FLAG_GRWSM    0x05
 
 static uint8_t s_reset_flag;
 
@@ -107,8 +108,10 @@ void Board_Sleep(void)
     KEY_CLEAR_IT();
     PFIC_EnableIRQ(GPIO_B_IRQn);
 
+#ifdef DEBUG
     PRINT("shutdown\n");
     while((R8_UART1_LSR & RB_LSR_TX_ALL_EMP) == 0);   /* дать строке уйти */
+#endif
 
     /* RAM не сохраняем — всё нужное в DataFlash, а каждый включённый
      * домен добавляет ток. DC-DC внутри выключится принудительно,
@@ -243,6 +246,10 @@ int main(void)
      *
      * Ставится после Motor_Init(): длительности отсчитывает Buzzer_Tick()
      * из задачи мотора, до её запуска мелодия не поехала бы. */
+    /* Вышли из глубокого сна по кнопке — сразу наливаем. Почему это нельзя
+     * оставить автомату кнопки, расписано в Motor_WokeByKey(). */
+    if(s_reset_flag == RESET_FLAG_GRWSM) Motor_WokeByKey();
+
     if(s_reset_flag == RESET_FLAG_RPOR) buzzer_critical();
 
     Main_Circulation();

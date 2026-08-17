@@ -51,4 +51,8 @@ void     Motor_KickIdle(void);
 /* Уснуть по явной команде, не дожидаясь таймаута простоя */
 void     Motor_ForceSleep(void);
 
+/* Вызывать из main() при сбросе типа GRWSM — вышли из глубокого сна.
+ * Запускает помпу и проглатывает нажатие, которое разбудило чип. */
+void     Motor_WokeByKey(void);
+
 #endif /* __MOTOR_TASK_H */

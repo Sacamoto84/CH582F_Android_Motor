@@ -18,6 +18,15 @@ void UB_Reset(ubutton_t *b)
     b->tmr   = 0;
 }
 
+void UB_AssumePressed(ubutton_t *b)
+{
+    b->state  = UB_WAIT_RELEASE;
+    b->tmr    = 0;
+    b->deb    = 0;
+    b->raw    = 1;
+    b->stable = 1;
+}
+
 /*********************************************************************
  * @fn      debounce
  *
