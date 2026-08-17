@@ -27,7 +27,7 @@
 #define SETTINGS_SLOT_A     0x1000
 #define SETTINGS_SLOT_B     0x1100
 #define SETTINGS_MAGIC      0x4D50      /* 'PM' — pump */
-#define SETTINGS_VERSION    10          /* v10: + pot_raw_max */
+#define SETTINGS_VERSION    11          /* v11: boost_power стал прибавкой */
 
 typedef struct __attribute__((packed))
 {
@@ -40,7 +40,7 @@ typedef struct __attribute__((packed))
     uint16_t pwm_freq_run;       /* Гц   */
     uint16_t pwm_freq_boost;     /* Гц   */
     uint16_t boost_en;
-    uint16_t boost_power;        /* промилле, абсолютная скважность рывка */
+    uint16_t boost_power;        /* промилле, ПРИБАВКА к рабочей скважности */
     uint16_t boost_time;         /* мс   */
     uint16_t max_run_s;          /* авто-стоп, 0 = выключен */
     uint16_t vbat_scale_q12;     /* масштаб АЦП -> мВ, калибруется */

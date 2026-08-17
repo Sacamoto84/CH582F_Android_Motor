@@ -97,10 +97,12 @@ object Params {
                 "с места и продавить столб воды.",
         ),
         ParamSpec(
-            id = BOOST_POWER, key = "BOOST_POWER", title = "Мощность рывка",
-            unit = "‰", min = 0, max = 1000, default = 800, kind = ParamKind.NUMBER,
-            hint = "Абсолютная скважность на время рывка — не прибавка к текущей, " +
-                "а именно значение.",
+            id = BOOST_POWER, key = "BOOST_POWER", title = "Прибавка на рывок",
+            unit = "‰", min = 0, max = 1000, default = 200, kind = ParamKind.NUMBER,
+            hint = "Прибавляется к текущей скважности на время рывка, а не " +
+                "заменяет её. Рывок получается соразмерен режиму: на малой " +
+                "мощности добавит столько же, сколько на большой. Сумма выше " +
+                "100 % зажимается.",
         ),
         ParamSpec(
             id = BOOST_TIME, key = "BOOST_TIME", title = "Длительность рывка",
