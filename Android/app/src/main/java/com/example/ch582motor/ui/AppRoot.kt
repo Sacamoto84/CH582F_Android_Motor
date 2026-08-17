@@ -35,12 +35,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ch582motor.ble.ConnectionPhase
 import com.example.ch582motor.vm.MotorViewModel
 
-private val TABS = listOf("Наблюдение", "Настройки", "Мастер")
+private val TABS = listOf("Наблюдение", "Настройки", "Мастер", "Пресеты")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppRoot(vm: MotorViewModel = viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val presets by vm.presets.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     var tab by remember { mutableIntStateOf(0) }
     var confirmDisconnect by remember { mutableStateOf(false) }
@@ -138,6 +139,15 @@ fun AppRoot(vm: MotorViewModel = viewModel()) {
                     onTestRun = { vm.testRun() },
                     onStop = vm::stop,
                     onSave = vm::save,
+                )
+
+                3 -> PresetsScreen(
+                    state = state,
+                    presets = presets,
+                    diffCount = vm::presetDiffCount,
+                    onSave = vm::savePreset,
+                    onApply = vm::applyPreset,
+                    onDelete = vm::deletePreset,
                 )
             }
         }

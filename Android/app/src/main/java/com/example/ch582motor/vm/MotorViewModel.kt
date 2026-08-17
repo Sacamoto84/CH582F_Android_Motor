@@ -15,6 +15,8 @@ import com.example.ch582motor.ble.MotorScanner
 import com.example.ch582motor.ble.ParamValue
 import com.example.ch582motor.ble.Params
 import com.example.ch582motor.ble.Telemetry
+import com.example.ch582motor.data.Preset
+import com.example.ch582motor.data.PresetStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -66,6 +68,10 @@ class MotorViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _state = MutableStateFlow(UiState())
     val state = _state.asStateFlow()
+
+    private val presetStore = PresetStore(app)
+    private val _presets = MutableStateFlow(presetStore.load())
+    val presets = _presets.asStateFlow()
 
     private val _messages = Channel<String>(Channel.BUFFERED)
     val messages = _messages.receiveAsFlow()
@@ -406,6 +412,71 @@ class MotorViewModel(app: Application) : AndroidViewModel(app) {
             delay(ms)
             sendCommand(Cmd.MOTOR_STOP)
         }
+    }
+
+    // -------------------------------------------------------------- пресеты
+
+    /**
+     * Снимок того, что сейчас показано на экране настроек. Пресет хранит
+     * все параметры, включая калибровочные VBAT_SCALE_Q12 и POT_RAW_MAX —
+     * так он годится и как резервная копия перед экспериментами.
+     */
+    fun savePreset(name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+
+        val st = _state.value
+        val values = Params.all.mapNotNull { spec ->
+            st.value(spec.id)?.let { spec.id to it }
+        }.toMap()
+
+        if (values.size < Params.COUNT) {
+            notify("Параметры ещё не прочитаны целиком")
+            return
+        }
+
+        val replaced = _presets.value.any { it.name == trimmed }
+        val list = _presets.value.filterNot { it.name == trimmed } + Preset(trimmed, values)
+
+        _presets.value = list
+        presetStore.save(list)
+        notify(if (replaced) "Пресет «$trimmed» перезаписан" else "Пресет «$trimmed» сохранён")
+    }
+
+    fun deletePreset(name: String) {
+        val list = _presets.value.filterNot { it.name == name }
+        _presets.value = list
+        presetStore.save(list)
+        notify("Пресет «$name» удалён")
+    }
+
+    /**
+     * Заливаем последовательно, а не пачкой корутин: очередь ожиданий
+     * квитанций должна совпадать с порядком записей, иначе отказ по одному
+     * параметру откатит другой.
+     */
+    fun applyPreset(preset: Preset) {
+        if (!_state.value.connected) return
+
+        val values = Params.all.mapNotNull { spec ->
+            preset.values[spec.id]?.let { spec.id to spec.clamp(it) }
+        }
+        if (values.isEmpty()) return
+
+        // Показываем сразу, чтобы форма не отставала от заливки
+        _state.update { it.copy(edited = it.edited + values) }
+        values.forEach { (id, _) -> debounce.remove(id)?.cancel() }
+
+        viewModelScope.launch {
+            for ((id, v) in values) writeParam(id, v)
+            notify("Пресет «${preset.name}» применён")
+        }
+    }
+
+    /** Сколько параметров пресета отличается от текущих значений. */
+    fun presetDiffCount(preset: Preset): Int {
+        val st = _state.value
+        return preset.values.count { (id, v) -> st.value(id) != v }
     }
 
     // ----------------------------------------------------------- калибровка
