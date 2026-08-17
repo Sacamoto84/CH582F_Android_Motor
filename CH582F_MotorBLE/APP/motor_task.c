@@ -34,6 +34,7 @@ static uint16_t s_vbat_mv;
 static uint32_t s_state_ms;           /* время в текущем состоянии   */
 static uint32_t s_run_ms;             /* время непрерывной работы    */
 static uint32_t s_start_ms;           /* мс с момента пуска, для плавного нарастания */
+static uint16_t s_led_ms;             /* фаза мигания светодиода     */
 static uint32_t s_idle_ms;
 static uint8_t  s_force_sleep;        /* команда «уснуть» по BLE */
 static uint16_t s_vbat_div;           /* делитель периода замера VBAT */
@@ -106,6 +107,41 @@ static void read_pot(void)
 {
     uint16_t raw = adc_read(AIN_POT);
     s_pot_raw = (uint16_t)(((uint32_t)s_pot_raw * 3 + raw) >> 2);
+}
+
+/*********************************************************************
+ * @fn      led_tick
+ *
+ * @brief   Светодиод сообщает два разных факта, поэтому нужен приоритет.
+ *
+ *          Работающая помпа важнее: это индикация состояния, в котором
+ *          устройство льёт воду и тянет 0.7 А. Ровное свечение ни с чем
+ *          не спутать, мигание бы его размыло.
+ *
+ *          Подключённый телефон — короткая вспышка раз в секунду. Видно,
+ *          что связь есть, и не сливается с ровным свечением.
+ */
+static void led_tick(void)
+{
+    if(s_state != M_IDLE)
+    {
+        LED_ON();
+        s_led_ms = 0;
+        return;
+    }
+
+    if(!Peripheral_IsConnected())
+    {
+        LED_OFF();
+        s_led_ms = 0;
+        return;
+    }
+
+    s_led_ms += MOTOR_TICK_MS;
+    if(s_led_ms >= LED_BLINK_PERIOD_MS) s_led_ms = 0;
+
+    if(s_led_ms < LED_BLINK_ON_MS) LED_ON();
+    else                           LED_OFF();
 }
 
 /*********************************************************************
@@ -624,16 +660,10 @@ uint16_t Motor_ProcessEvent(uint8_t task_id, uint16_t events)
         poll_key();
         run_state_machine();
 
-        LED_OFF();
-        if(s_state != M_IDLE)
-        {
-            LED_ON();
-            Motor_KickIdle();
-        }
-        else
-        {
-            s_idle_ms += MOTOR_TICK_MS;
-        }
+        if(s_state != M_IDLE) Motor_KickIdle();
+        else                  s_idle_ms += MOTOR_TICK_MS;
+
+        led_tick();
 
         /* Сброс. Ждём только окончания сигнала — состояние кнопки
          * НАМЕРЕННО не проверяется, и это ключевой момент.

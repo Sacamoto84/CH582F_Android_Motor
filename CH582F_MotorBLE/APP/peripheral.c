@@ -9,6 +9,7 @@
 #include "peripheral.h"
 #include "motor_service.h"
 #include "motor_task.h"
+#include "buzzer.h"
 
 uint8_t Peripheral_TaskID = INVALID_TASK_ID;
 
@@ -209,6 +210,7 @@ static void peripheralStateNotificationCB(gapRole_States_t newState, gapRoleEven
                 s_connHandle = e->connectionHandle;
                 MotorService_SetConnHandle(s_connHandle);
                 Motor_KickIdle();
+                buzzer_ok();        /* телефон подключился, слышно с корпуса */
                 tmos_start_task(Peripheral_TaskID, SBP_PARAM_UPDATE_EVT, SBP_PARAM_UPDATE_DELAY);
                 PRINT("Connected, int %d\n", e->connInterval);
             }
