@@ -47,14 +47,28 @@ data class UiState(
     val paramsLoaded: Boolean = false,
     val busy: Boolean = false,
     /**
-     * Есть принятые устройством изменения, которые ещё не записаны во flash.
-     * Прошивка сама их не сохраняет — только по команде SAVE.
+     * Снимок значений на момент последнего чтения или записи во flash.
+     * Всё, что от него отличается, и есть несохранённые изменения —
+     * прошивка сама ничего не сохраняет, только по команде SAVE.
      */
-    val dirty: Boolean = false,
+    val saved: Map<Int, Int> = emptyMap(),
 ) {
     fun value(id: Int): Int? = edited[id] ?: params[id]
     val connected: Boolean get() = phase.isReady
+
+    /** Что именно разошлось с flash. Порядок как в таблице параметров. */
+    val changes: List<ParamChange>
+        get() = Params.all.mapNotNull { spec ->
+            val now = params[spec.id] ?: return@mapNotNull null
+            val was = saved[spec.id] ?: return@mapNotNull null
+            if (was == now) null else ParamChange(spec.id, was, now)
+        }
+
+    val dirty: Boolean get() = changes.isNotEmpty()
 }
+
+/** Одно расхождение с flash: было `from`, стало `to`. */
+data class ParamChange(val id: Int, val from: Int, val to: Int)
 
 /** Чего ждём от следующей квитанции — иначе id параметра и код команды не различить. */
 private sealed interface Expect {
@@ -107,7 +121,7 @@ class MotorViewModel(app: Application) : AndroidViewModel(app) {
                     telemetry = null,
                     paramsLoaded = false,
                     pending = emptySet(),
-                    dirty = false,
+                    saved = emptyMap(),
                 )
 
                 else -> st.copy(phase = phase)
@@ -242,7 +256,6 @@ class MotorViewModel(app: Application) : AndroidViewModel(app) {
                         st.copy(
                             params = st.params + (expect.id to expect.newValue),
                             pending = st.pending - expect.id,
-                            dirty = true,
                         )
                     }
                     // PWM_MIN и PWM_MAX прошивка может поменять местами — перечитать.
@@ -279,7 +292,7 @@ class MotorViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 when (expect.code) {
                     Cmd.SAVE -> {
-                        _state.update { it.copy(dirty = false) }
+                        _state.update { it.copy(saved = it.params) }
                         notify("Настройки записаны во flash")
                     }
 
@@ -310,8 +323,8 @@ class MotorViewModel(app: Application) : AndroidViewModel(app) {
         for (spec in Params.all) {
             if (!readParam(spec.id)) missing += spec.id
         }
-        // Прочитанное совпадает с тем, что во flash, — сохранять нечего.
-        _state.update { it.copy(dirty = false) }
+        // Прочитанное и есть то, что лежит во flash: точка отсчёта расхождений.
+        _state.update { it.copy(saved = it.params) }
         if (missing.isNotEmpty()) {
             notify("Не прочитаны параметры: " + missing.joinToString { Params.title(it) })
         }
@@ -404,15 +417,6 @@ class MotorViewModel(app: Application) : AndroidViewModel(app) {
     fun save() = sendCommand(Cmd.SAVE)
     fun factoryReset() = sendCommand(Cmd.FACTORY_RESET)
     fun sleep() = sendCommand(Cmd.SLEEP)
-
-    /** Пробный пуск на [ms] миллисекунд — для мастера подбора рывка. */
-    fun testRun(ms: Long = 1500) {
-        viewModelScope.launch {
-            sendCommand(Cmd.MOTOR_START)
-            delay(ms)
-            sendCommand(Cmd.MOTOR_STOP)
-        }
-    }
 
     // -------------------------------------------------------------- пресеты
 

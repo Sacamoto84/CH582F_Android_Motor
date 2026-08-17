@@ -33,9 +33,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ch582motor.ble.ConnectionPhase
+import com.example.ch582motor.ble.Params
 import com.example.ch582motor.vm.MotorViewModel
+import com.example.ch582motor.vm.ParamChange
 
-private val TABS = listOf("Наблюдение", "Настройки", "Мастер", "Пресеты")
+private val TABS = listOf("Наблюдение", "Настройки", "Пресеты")
+
+/** Сколько расхождений перечислять в баннере, прежде чем свернуть в счётчик. */
+private const val CHANGES_SHOWN = 5
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -111,7 +116,8 @@ fun AppRoot(vm: MotorViewModel = viewModel()) {
                 }
             }
 
-            if (state.dirty) UnsavedBanner(onSave = vm::save)
+            val changes = state.changes
+            if (changes.isNotEmpty()) UnsavedBanner(changes, onSave = vm::save)
 
             when (tab) {
                 0 -> MonitorScreen(
@@ -133,15 +139,7 @@ fun AppRoot(vm: MotorViewModel = viewModel()) {
                     onCalibrate = { realMv, shownMv -> vm.calibrateVbat(realMv, shownMv) },
                 )
 
-                2 -> WizardScreen(
-                    state = state,
-                    onApply = vm::applyParam,
-                    onTestRun = { vm.testRun() },
-                    onStop = vm::stop,
-                    onSave = vm::save,
-                )
-
-                3 -> PresetsScreen(
+                2 -> PresetsScreen(
                     state = state,
                     presets = presets,
                     diffCount = vm::presetDiffCount,
@@ -180,31 +178,58 @@ fun AppRoot(vm: MotorViewModel = viewModel()) {
     }
 }
 
-/** Прошивка не сохраняет сама — напоминаем и даём кнопку под рукой. */
+/**
+ * Прошивка не сохраняет сама, поэтому напоминаем — и сразу перечисляем, что
+ * именно разошлось с flash. «Есть несохранённые изменения» без списка
+ * заставляет гадать, какие.
+ */
 @Composable
-private fun UnsavedBanner(onSave: () -> Unit) {
+private fun UnsavedBanner(changes: List<ParamChange>, onSave: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.secondaryContainer,
         ),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(start = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
+        Column(Modifier.padding(start = 12.dp, end = 4.dp, bottom = 10.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
                 Text(
-                    "Есть несохранённые изменения",
+                    "Не сохранено во flash: ${changes.size}",
                     style = MaterialTheme.typography.titleSmall,
                 )
+                TextButton(onClick = onSave) { Text("Сохранить") }
+            }
+
+            changes.take(CHANGES_SHOWN).forEach { change ->
+                val spec = Params.spec(change.id)
                 Text(
-                    "Уже действуют, но пропадут при сбросе или уходе в сон",
+                    "%s: %s → %s".format(
+                        spec?.title ?: "Параметр ${change.id}",
+                        spec?.format(change.from) ?: change.from.toString(),
+                        spec?.format(change.to) ?: change.to.toString(),
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
-            TextButton(onClick = onSave) { Text("Сохранить") }
+
+            if (changes.size > CHANGES_SHOWN) {
+                Text(
+                    "и ещё ${changes.size - CHANGES_SHOWN}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline,
+                )
+            }
+
+            Text(
+                "Уже действуют, но пропадут при сбросе или уходе в сон",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.padding(top = 6.dp),
+            )
         }
     }
 }

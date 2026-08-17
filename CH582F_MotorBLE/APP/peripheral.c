@@ -199,6 +199,7 @@ static void peripheralStateNotificationCB(gapRole_States_t newState, gapRoleEven
                 s_connHandle = GAP_CONNHANDLE_INIT;
                 MotorService_SetConnHandle(INVALID_CONNHANDLE);
                 tmos_stop_task(Motor_TaskID, MOTOR_EVT_TELEMETRY);
+                buzzer_beepboop();  /* связь пропала, слышно с корпуса */
                 PRINT("Disconnected, reason %x\n", pEvent->linkTerminate.reason);
             }
             break;
@@ -222,6 +223,7 @@ static void peripheralStateNotificationCB(gapRole_States_t newState, gapRoleEven
                 s_connHandle = GAP_CONNHANDLE_INIT;
                 MotorService_SetConnHandle(INVALID_CONNHANDLE);
                 tmos_stop_task(Motor_TaskID, MOTOR_EVT_TELEMETRY);
+                buzzer_beepboop();
             }
             /* Реклама заново — но не если готовимся ко сну, иначе стек
              * будет будить чип по своему RTC и сон не наступит. */
