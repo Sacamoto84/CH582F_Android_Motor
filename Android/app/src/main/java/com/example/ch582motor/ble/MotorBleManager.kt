@@ -63,7 +63,7 @@ class MotorBleManager(context: Context) : BleManager(context) {
             }
 
             override fun onDeviceReady(device: BluetoothDevice) {
-                _connection.value = ConnectionPhase.Ready(device)
+                _connection.value = ConnectionPhase.Ready
             }
 
             override fun onDeviceDisconnecting(device: BluetoothDevice) {
@@ -165,27 +165,4 @@ class MotorBleManager(context: Context) : BleManager(context) {
     private companion object {
         const val TAG = "MotorBle"
     }
-}
-
-/** Фаза соединения — то, что показываем в шапке. */
-sealed interface ConnectionPhase {
-    data object Connecting : ConnectionPhase
-    data object Initializing : ConnectionPhase
-    data class Ready(val device: BluetoothDevice) : ConnectionPhase
-    data object Disconnecting : ConnectionPhase
-
-    /**
-     * @param expected разрыв после команды SLEEP — так и задумано
-     * @param failedToConnect до соединения дело не дошло
-     * @param cancelled пользователь сам прервал подключение
-     */
-    data class Disconnected(
-        val reason: Int = ConnectionObserver.REASON_SUCCESS,
-        val expected: Boolean = false,
-        val failedToConnect: Boolean = false,
-        val cancelled: Boolean = false,
-    ) : ConnectionPhase
-
-    val isReady: Boolean get() = this is Ready
-    val isBusy: Boolean get() = this is Connecting || this is Initializing
 }

@@ -9,18 +9,42 @@ import org.json.JSONObject
 data class Preset(val name: String, val values: Map<Int, Int>)
 
 /**
- * Пресеты живут в SharedPreferences одной строкой JSON.
+ * Где лежат пресеты. Интерфейс нужен логике: в тестах его заменяет список
+ * в памяти, и `MotorViewModel` перестаёт зависеть от SharedPreferences.
+ */
+interface PresetStorage {
+    fun load(): List<Preset>
+    fun save(presets: List<Preset>)
+}
+
+/**
+ * Пресеты в виде одной строки JSON.
  *
  * Ни DataStore, ни сериализация сюда не тянутся намеренно: десяток пресетов
  * по тринадцать чисел — это единицы килобайт, а org.json есть в Android
  * из коробки.
+ *
+ * Разбор живёт отдельно от хранилища, потому что ошибаться он умеет,
+ * а SharedPreferences в юнит-тест не затащить.
  */
-class PresetStore(context: Context) {
+object PresetCodec {
 
-    private val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+    fun encode(presets: List<Preset>): String {
+        val array = JSONArray()
+        presets.forEach { preset ->
+            val values = JSONObject()
+            preset.values.forEach { (id, v) -> values.put(id.toString(), v) }
+            array.put(JSONObject().put(NAME, preset.name).put(VALUES, values))
+        }
+        return array.toString()
+    }
 
-    fun load(): List<Preset> {
-        val raw = prefs.getString(KEY, null) ?: return emptyList()
+    /**
+     * Мусор и обрывки дают пустой список: терять пресеты обидно, но падать
+     * при запуске из-за них — хуже.
+     */
+    fun decode(raw: String?): List<Preset> {
+        if (raw == null) return emptyList()
 
         return runCatching {
             val array = JSONArray(raw)
@@ -43,20 +67,23 @@ class PresetStore(context: Context) {
         }.getOrDefault(emptyList())
     }
 
-    fun save(presets: List<Preset>) {
-        val array = JSONArray()
-        presets.forEach { preset ->
-            val values = JSONObject()
-            preset.values.forEach { (id, v) -> values.put(id.toString(), v) }
-            array.put(JSONObject().put(NAME, preset.name).put(VALUES, values))
-        }
-        prefs.edit().putString(KEY, array.toString()).apply()
+    private const val NAME = "name"
+    private const val VALUES = "values"
+}
+
+/** Хранилище поверх SharedPreferences: вся его работа — достать и положить строку. */
+class PresetStore(context: Context) : PresetStorage {
+
+    private val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+
+    override fun load(): List<Preset> = PresetCodec.decode(prefs.getString(KEY, null))
+
+    override fun save(presets: List<Preset>) {
+        prefs.edit().putString(KEY, PresetCodec.encode(presets)).apply()
     }
 
     private companion object {
         const val FILE = "presets"
         const val KEY = "list"
-        const val NAME = "name"
-        const val VALUES = "values"
     }
 }

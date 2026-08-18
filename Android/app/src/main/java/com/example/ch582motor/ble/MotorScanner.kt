@@ -1,6 +1,5 @@
 package com.example.ch582motor.ble
 
-import android.bluetooth.BluetoothDevice
 import android.os.ParcelUuid
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -10,13 +9,6 @@ import no.nordicsemi.android.support.v18.scanner.ScanCallback
 import no.nordicsemi.android.support.v18.scanner.ScanFilter
 import no.nordicsemi.android.support.v18.scanner.ScanResult
 import no.nordicsemi.android.support.v18.scanner.ScanSettings
-
-data class FoundDevice(
-    val device: BluetoothDevice,
-    val address: String,
-    val name: String?,
-    val rssi: Int,
-)
 
 /**
  * Сканирование по UUID сервиса.
@@ -52,7 +44,6 @@ object MotorScanner {
             private fun add(result: ScanResult): Boolean {
                 val address = result.device.address
                 val entry = FoundDevice(
-                    device = result.device,
                     address = address,
                     name = result.scanRecord?.deviceName,
                     rssi = result.rssi,

@@ -29,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -44,7 +45,9 @@ private const val CHANGES_SHOWN = 5
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppRoot(vm: MotorViewModel = viewModel()) {
+fun AppRoot(
+    vm: MotorViewModel = viewModel(factory = MotorViewModel.factory(LocalContext.current)),
+) {
     val state by vm.state.collectAsStateWithLifecycle()
     val presets by vm.presets.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }

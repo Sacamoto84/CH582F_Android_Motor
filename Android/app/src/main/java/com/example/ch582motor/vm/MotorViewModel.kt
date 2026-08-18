@@ -1,21 +1,22 @@
 package com.example.ch582motor.vm
 
-import android.app.Application
-import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothManager
 import android.content.Context
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.ch582motor.ble.Ack
+import com.example.ch582motor.ble.BleLink
+import com.example.ch582motor.ble.BleLinkImpl
 import com.example.ch582motor.ble.Cmd
 import com.example.ch582motor.ble.ConnectionPhase
 import com.example.ch582motor.ble.FoundDevice
-import com.example.ch582motor.ble.MotorBleManager
-import com.example.ch582motor.ble.MotorScanner
 import com.example.ch582motor.ble.ParamValue
 import com.example.ch582motor.ble.Params
 import com.example.ch582motor.ble.Telemetry
 import com.example.ch582motor.data.Preset
+import com.example.ch582motor.data.PresetStorage
 import com.example.ch582motor.data.PresetStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -76,14 +77,14 @@ private sealed interface Expect {
     data class Command(val code: Int) : Expect
 }
 
-class MotorViewModel(app: Application) : AndroidViewModel(app) {
-
-    private val manager = MotorBleManager(app)
+class MotorViewModel(
+    private val ble: BleLink,
+    private val presetStore: PresetStorage,
+) : ViewModel() {
 
     private val _state = MutableStateFlow(UiState())
     val state = _state.asStateFlow()
 
-    private val presetStore = PresetStore(app)
     private val _presets = MutableStateFlow(presetStore.load())
     val presets = _presets.asStateFlow()
 
@@ -97,7 +98,7 @@ class MotorViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         viewModelScope.launch {
-            manager.packets.collect { packet ->
+            ble.packets.collect { packet ->
                 when (packet) {
                     is Telemetry -> _state.update { it.copy(telemetry = packet) }
                     is ParamValue -> onParamValue(packet)
@@ -106,7 +107,7 @@ class MotorViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         viewModelScope.launch {
-            manager.connection.collect { phase -> onPhase(phase) }
+            ble.connection.collect { phase -> onPhase(phase) }
         }
     }
 
@@ -146,12 +147,7 @@ class MotorViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun bluetoothEnabled(): Boolean {
-        val ctx = getApplication<Application>()
-        val bm = ctx.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
-        val adapter: BluetoothAdapter? = bm?.adapter
-        return adapter?.isEnabled == true
-    }
+    fun bluetoothEnabled(): Boolean = ble.bluetoothEnabled()
 
     fun startScan() {
         if (_state.value.scanning) return
@@ -159,7 +155,7 @@ class MotorViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(scanning = true, devices = emptyList()) }
         scanJob = viewModelScope.launch {
             withTimeoutOrNull(SCAN_DURATION_MS) {
-                MotorScanner.scan()
+                ble.scan()
                     .catch { e ->
                         notify(e.message ?: "Ошибка сканирования")
                     }
@@ -186,14 +182,14 @@ class MotorViewModel(app: Application) : AndroidViewModel(app) {
         }
         connectJob = viewModelScope.launch {
             try {
-                manager.connectTo(found.device)
+                ble.connectTo(found.address)
                 // Сначала параметры, потом телеметрия: пока она молчит, у стека
                 // свободны буферы уведомлений.
                 loadAllParams()
                 // Ожидание кладём до отправки: квитанция может прилететь раньше,
                 // чем вернётся управление из записи.
                 expectations.addLast(Expect.Command(Cmd.TELEMETRY_ON))
-                manager.sendCommand(Cmd.TELEMETRY_ON)
+                ble.sendCommand(Cmd.TELEMETRY_ON)
             } catch (e: CancellationException) {
                 // Отмена — не ошибка, сообщение выдаст cancelConnect()
                 throw e
@@ -216,14 +212,14 @@ class MotorViewModel(app: Application) : AndroidViewModel(app) {
         if (!job.isActive) return
         job.cancel()
         viewModelScope.launch {
-            manager.abortConnect()
+            ble.abortConnect()
             _state.update { it.copy(busy = false) }
         }
     }
 
     fun disconnect() {
         viewModelScope.launch {
-            runCatching { manager.disconnectFrom() }
+            runCatching { ble.disconnectFrom() }
         }
     }
 
@@ -331,14 +327,14 @@ class MotorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Подписку на ответ открываем до отправки запроса — [manager] раздаёт пакеты
+     * Подписку на ответ открываем до отправки запроса — [ble] раздаёт пакеты
      * через SharedFlow без реплея, опоздавший подписчик ответ не увидит.
      */
     private suspend fun readParam(id: Int): Boolean {
         repeat(PARAM_READ_ATTEMPTS) {
             val got = withTimeoutOrNull(PARAM_READ_TIMEOUT_MS) {
-                manager.packets
-                    .onSubscription { runCatching { manager.sendGetParam(id) } }
+                ble.packets
+                    .onSubscription { runCatching { ble.sendGetParam(id) } }
                     .filterIsInstance<ParamValue>()
                     .first { it.id == id }
             }
@@ -379,7 +375,7 @@ class MotorViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(pending = it.pending + id) }
         expectations.addLast(Expect.Param(id, value, old))
         try {
-            manager.sendSetParam(id, value)
+            ble.sendSetParam(id, value)
         } catch (e: Exception) {
             expectations.removeLastOrNull()
             _state.update { it.copy(pending = it.pending - id) }
@@ -400,13 +396,13 @@ class MotorViewModel(app: Application) : AndroidViewModel(app) {
     fun sendCommand(code: Int) {
         if (!_state.value.connected) return
         viewModelScope.launch {
-            if (code == Cmd.SLEEP) manager.sleepRequested = true
+            if (code == Cmd.SLEEP) ble.sleepRequested = true
             expectations.addLast(Expect.Command(code))
             try {
-                manager.sendCommand(code)
+                ble.sendCommand(code)
             } catch (e: Exception) {
                 expectations.removeLastOrNull()
-                manager.sleepRequested = false
+                ble.sleepRequested = false
                 notify(e.message ?: "Команда не прошла")
             }
         }
@@ -512,13 +508,21 @@ class MotorViewModel(app: Application) : AndroidViewModel(app) {
 
     override fun onCleared() {
         super.onCleared()
-        runCatching { manager.close() }
+        runCatching { ble.close() }
     }
 
-    private companion object {
-        const val WRITE_DEBOUNCE_MS = 400L
-        const val SCAN_DURATION_MS = 30_000L
-        const val PARAM_READ_TIMEOUT_MS = 2_000L
-        const val PARAM_READ_ATTEMPTS = 3
+    companion object {
+        private const val WRITE_DEBOUNCE_MS = 400L
+        private const val SCAN_DURATION_MS = 30_000L
+        private const val PARAM_READ_TIMEOUT_MS = 2_000L
+        private const val PARAM_READ_ATTEMPTS = 3
+
+        /** Единственное место, где логика встречается с платформой. */
+        fun factory(context: Context): ViewModelProvider.Factory {
+            val app = context.applicationContext
+            return viewModelFactory {
+                initializer { MotorViewModel(BleLinkImpl(app), PresetStore(app)) }
+            }
+        }
     }
 }
