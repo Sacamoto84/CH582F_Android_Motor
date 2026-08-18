@@ -316,11 +316,15 @@ class MotorViewModel(
      */
     private suspend fun loadAllParams() {
         val missing = mutableListOf<Int>()
+        val read = mutableMapOf<Int, Int>()
         for (spec in Params.all) {
-            if (!readParam(spec.id)) missing += spec.id
+            val value = readParam(spec.id)
+            if (value == null) missing += spec.id else read[spec.id] = value
         }
         // Прочитанное и есть то, что лежит во flash: точка отсчёта расхождений.
-        _state.update { it.copy(saved = it.params) }
+        // Берём его из своих же ответов, а не из st.params: параметры туда
+        // кладёт отдельный сборщик пакетов, и он может ещё не разгрести очередь.
+        _state.update { it.copy(saved = it.params + read) }
         if (missing.isNotEmpty()) {
             notify("Не прочитаны параметры: " + missing.joinToString { Params.title(it) })
         }
@@ -329,8 +333,10 @@ class MotorViewModel(
     /**
      * Подписку на ответ открываем до отправки запроса — [ble] раздаёт пакеты
      * через SharedFlow без реплея, опоздавший подписчик ответ не увидит.
+     *
+     * @return прочитанное значение либо null, если устройство промолчало
      */
-    private suspend fun readParam(id: Int): Boolean {
+    private suspend fun readParam(id: Int): Int? {
         repeat(PARAM_READ_ATTEMPTS) {
             val got = withTimeoutOrNull(PARAM_READ_TIMEOUT_MS) {
                 ble.packets
@@ -338,9 +344,9 @@ class MotorViewModel(
                     .filterIsInstance<ParamValue>()
                     .first { it.id == id }
             }
-            if (got != null) return true
+            if (got != null) return got.value
         }
-        return false
+        return null
     }
 
     /**

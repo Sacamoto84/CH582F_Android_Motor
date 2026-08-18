@@ -52,6 +52,9 @@ dependencies {
     implementation(libs.nordic.scanner)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+    // org.json в android.jar — заглушка, бросающая "Stub!". Настоящий кладём
+    // раньше неё по classpath, иначе разбор пресетов юнит-тестом не проверить.
+    testImplementation(libs.json)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)
