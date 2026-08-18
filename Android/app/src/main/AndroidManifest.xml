@@ -31,9 +31,9 @@
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
-        android:icon="@drawable/i"
+        android:icon="@drawable/i2"
         android:label="@string/app_name"
-        android:roundIcon="@drawable/i"
+        android:roundIcon="@drawable/i2"
         android:supportsRtl="true"
         android:theme="@style/Theme.Ch582motor">
         <activity
